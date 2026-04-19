@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="x-ua-compatible" content="IE=Edge" />
+  <title>Network Engineer Control Panel</title>
+  <hta:application
+    applicationname="Network Engineer Control Panel"
+    border="thin"
+    borderstyle="normal"
+    caption="yes"
+    maximizebutton="yes"
+    minimizebutton="yes"
+    showintaskbar="yes"
+    singleinstance="yes"
+    sysmenu="yes"
+    scroll="no"
+  />
+  <style>
+    :root {
+      --bg: #eef1eb;
+      --panel: #f8faf6;
+      --line: #cfd6cc;
+      --text: #101510;
+      --muted: #5c655d;
+      --ok: #12775a;
+      --warn: #a16b0f;
+      --fail: #c53c33;
+      --accent: #174f3d;
+      --button: #111613;
+      --buttonText: #f6f9f5;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", Arial, sans-serif;
+    }
+
+    body {
+      min-height: 100vh;
+    }
+
+    .shell {
+      min-height: 100vh;
+      display: grid;
+      gap: 24px;
+      padding: 28px 32px 24px;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.85), rgba(248,250,246,0.88)),
+        radial-gradient(circle at top right, rgba(23,79,61,0.08), transparent 34%);
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.8fr);
+      gap: 24px;
+      align-items: end;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 20px;
+    }
+
+    .eyebrow {
+      font-size: 13px;
+      color: var(--muted);
+      letter-spacing: 0.02em;
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 36px;
+      line-height: 1;
+      font-weight: 700;
+    }
+
+    .hero-copy {
+      max-width: 720px;
+    }
+
+    .subtitle {
+      margin-top: 14px;
+      font-size: 15px;
+      line-height: 1.6;
+      color: var(--muted);
+      max-width: 58ch;
+    }
+
+    .meta-grid {
+      display: grid;
+      gap: 12px;
+      justify-self: end;
+      width: min(420px, 100%);
+    }
+
+    .meta-row {
+      display: grid;
+      gap: 6px;
+      border-top: 1px solid var(--line);
+      padding-top: 12px;
+    }
+
+    .meta-label {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .meta-value {
+      font-size: 14px;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+
+    .overall-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      width: fit-content;
+      padding: 8px 14px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.75);
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      display: inline-block;
+      background: var(--muted);
+    }
+
+    .status-ok { background: var(--ok); }
+    .status-warning { background: var(--warn); }
+    .status-fail { background: var(--fail); }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 10px 16px;
+      font-size: 14px;
+      line-height: 1.2;
+      cursor: pointer;
+      transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease, opacity 120ms ease;
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: wait;
+    }
+
+    .action-primary {
+      background: var(--button);
+      color: var(--buttonText);
+    }
+
+    .action-primary:hover:not(:disabled) {
+      background: #1f2722;
+    }
+
+    .action-secondary {
+      background: transparent;
+      color: var(--text);
+      border-color: var(--line);
+    }
+
+    .action-secondary:hover:not(:disabled) {
+      background: rgba(255,255,255,0.65);
+    }
+
+    .status-wrap {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(300px, 0.8fr);
+      gap: 24px;
+      align-items: start;
+    }
+
+    .status-panel,
+    .side-panel {
+      border-top: 1px solid var(--line);
+      padding-top: 16px;
+    }
+
+    .section-title {
+      margin: 0 0 10px;
+      font-size: 13px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .status-list {
+      display: grid;
+    }
+
+    .status-item {
+      display: grid;
+      grid-template-columns: 170px 96px minmax(0, 1fr);
+      gap: 18px;
+      align-items: start;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .status-label {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .status-state {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .status-copy {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .status-summary {
+      font-size: 14px;
+    }
+
+    .status-detail {
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--muted);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .empty-state {
+      padding: 18px 0;
+      color: var(--muted);
+      font-size: 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .link-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .quick-link {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      padding: 12px 0;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      border-radius: 0;
+      background: transparent;
+      text-align: left;
+      color: var(--text);
+    }
+
+    .quick-link:hover:not(:disabled) {
+      background: transparent;
+      color: var(--accent);
+      border-color: #bfc8bc;
+    }
+
+    .link-copy {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .link-label {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .link-target {
+      font-size: 12px;
+      color: var(--muted);
+      word-break: break-all;
+    }
+
+    .banner {
+      display: none;
+      padding: 12px 14px;
+      border-radius: 8px;
+      border: 1px solid rgba(197, 60, 51, 0.28);
+      background: rgba(197, 60, 51, 0.08);
+      color: #7b1a16;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .banner.visible {
+      display: block;
+    }
+
+    details {
+      border-top: 1px solid var(--line);
+      padding-top: 14px;
+    }
+
+    summary {
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    pre {
+      margin: 12px 0 0;
+      padding: 14px;
+      border-radius: 8px;
+      background: #101510;
+      color: #f5faf4;
+      font-size: 12px;
+      line-height: 1.55;
+      overflow: auto;
+      max-height: 260px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    @media (max-width: 980px) {
+      .shell {
+        padding: 22px 20px 20px;
+      }
+
+      .hero,
+      .status-wrap {
+        grid-template-columns: 1fr;
+      }
+
+      .meta-grid {
+        justify-self: stretch;
+      }
+
+      .status-item {
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+    }
+  </style>
+  <script type="text/javascript">
+    var shell = new ActiveXObject("WScript.Shell");
+    var fso = new ActiveXObject("Scripting.FileSystemObject");
+    var coreKeys = ["dockerDaemon", "postgres", "redis", "minio", "devProcess", "workerProcess", "loginUrl", "chatUrl", "settingsUrl"];
+    var REFRESH_TIMEOUT_MS = 20000;
+    var ACTION_TIMEOUT_MS = 120000;
+    var dockerDesktopPath = "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe";
+    var actionInFlight = false;
+    var refreshInFlight = false;
+    var refreshTimer = null;
+    var lastKnownGoodReport = null;
+    var lastFreshReport = null;
+    var lastRawStatus = "";
+    var pendingAction = null;
+    var bannerSticky = false;
+    var bannerSource = "";
+
+    function decodeLocalPath(pathname) {
+      var path = decodeURIComponent(pathname);
+      path = path.replace(/\//g, "\\");
+      if (/^\\[A-Za-z]:/.test(path)) {
+        path = path.slice(1);
+      }
+      return path;
+    }
+
+    var htaPath = decodeLocalPath(window.location.pathname);
+    var projectRoot = htaPath.replace(/\\[^\\]+$/, "");
+    var scriptsDir = projectRoot + "\\scripts";
+
+    function q(value) {
+      return '"' + value.replace(/"/g, '""') + '"';
+    }
+
+    function buildPowerShellFileCommand(scriptName, extraArgs) {
+      var command = 'powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File ' + q(scriptsDir + "\\" + scriptName);
+      if (extraArgs) {
+        command += " " + extraArgs;
+      }
+      return command;
+    }
+
+    function buildStatusRunnerCommand(job) {
+      return buildPowerShellFileCommand(
+        "status-local-runner.ps1",
+        '-StdOutFile ' + q(job.stdout) + ' -StdErrFile ' + q(job.stderr) + ' -ExitCodeFile ' + q(job.exit)
+      );
+    }
+
+    function buildActionRunnerCommand(action, job) {
+      return buildPowerShellFileCommand(
+        "local-action-runner.ps1",
+        '-Action ' + q(action) + ' -StdOutFile ' + q(job.stdout) + ' -StdErrFile ' + q(job.stderr) + ' -ExitCodeFile ' + q(job.exit)
+      );
+    }
+
+    function createTempJob(prefix) {
+      var tempRoot = fso.GetSpecialFolder(2);
+      var token = prefix + "-" + new Date().getTime() + "-" + Math.floor(Math.random() * 100000);
+      return {
+        startedAt: new Date().getTime(),
+        stdout: tempRoot + "\\" + token + ".out",
+        stderr: tempRoot + "\\" + token + ".err",
+        exit: tempRoot + "\\" + token + ".exit"
+      };
+    }
+
+    function deleteIfExists(path) {
+      try {
+        if (fso.FileExists(path)) {
+          fso.DeleteFile(path, true);
+        }
+      } catch (error) {}
+    }
+
+    function cleanupTempJob(job) {
+      deleteIfExists(job.stdout);
+      deleteIfExists(job.stderr);
+      deleteIfExists(job.exit);
+    }
+
+    function readUtf8File(path) {
+      try {
+        if (!fso.FileExists(path)) {
+          return "";
+        }
+
+        var stream = new ActiveXObject("ADODB.Stream");
+        stream.Type = 2;
+        stream.Charset = "utf-8";
+        stream.Open();
+        stream.LoadFromFile(path);
+        var text = stream.ReadText();
+        stream.Close();
+        return text;
+      } catch (error) {
+        return "";
+      }
+    }
+
+    function openTarget(target) {
+      shell.Run('cmd.exe /c start "" ' + q(target), 0, false);
+    }
+
+    function setRawOutput(text) {
+      document.getElementById("raw-status").textContent = text || "";
+    }
+
+    function setButtonsDisabled(disabled) {
+      var buttons = document.querySelectorAll("[data-action]");
+      for (var i = 0; i < buttons.length; i++) {
+        buttons[i].disabled = disabled;
+      }
+    }
+
+    function setBanner(message, options) {
+      options = options || {};
+      var banner = document.getElementById("banner");
+      bannerSticky = !!(message && options.sticky);
+      bannerSource = message ? (options.source || "") : "";
+      if (message) {
+        banner.textContent = message;
+        banner.className = "banner visible";
+      } else {
+        banner.textContent = "";
+        banner.className = "banner";
+      }
+    }
+
+    function clearBannerBySources(sources) {
+      if (!bannerSource) {
+        return;
+      }
+
+      if (!sources || sources.indexOf(bannerSource) >= 0) {
+        setBanner("");
+      }
+    }
+
+    function setOverallState(state) {
+      var overallText = document.getElementById("overall-text");
+      var overallDot = document.getElementById("overall-dot");
+      overallText.textContent = state || "Waiting";
+      overallDot.className = "status-dot";
+
+      if (state === "OK") {
+        overallDot.className += " status-ok";
+      } else if (state === "WARNING") {
+        overallDot.className += " status-warning";
+      } else if (state === "FAIL") {
+        overallDot.className += " status-fail";
+      }
+    }
+
+    function formatCheckedAt(value) {
+      if (!value) {
+        return "Waiting for first refresh";
+      }
+
+      var date = new Date(value);
+      if (isNaN(date.getTime())) {
+        return value;
+      }
+
+      return date.toLocaleString();
+    }
+
+    function renderStatusLists(report) {
+      if (!report.items || !report.items.length) {
+        document.getElementById("core-status-list").innerHTML = '<div class="empty-state">Waiting for the first status refresh.</div>';
+        document.getElementById("additional-status-list").innerHTML = "";
+        document.getElementById("additional-empty").style.display = "block";
+        return;
+      }
+
+      var coreMap = {};
+      var additional = [];
+      for (var i = 0; i < report.items.length; i++) {
+        var item = report.items[i];
+        if (coreKeys.indexOf(item.key) >= 0) {
+          coreMap[item.key] = item;
+        } else {
+          additional.push(item);
+        }
+      }
+
+      var coreItems = [];
+      for (var j = 0; j < coreKeys.length; j++) {
+        var key = coreKeys[j];
+        if (coreMap[key]) {
+          coreItems.push(coreMap[key]);
+        } else {
+          coreItems.push({
+            key: key,
+            label: key,
+            state: "WARNING",
+            summary: "Missing from status report.",
+            detail: "This key was not returned in the latest JSON payload."
+          });
+        }
+      }
+
+      renderItemGroup(document.getElementById("core-status-list"), coreItems);
+      renderItemGroup(document.getElementById("additional-status-list"), additional);
+      document.getElementById("additional-empty").style.display = additional.length ? "none" : "block";
+    }
+
+    function renderItemGroup(container, items) {
+      container.innerHTML = "";
+
+      for (var i = 0; i < items.length; i++) {
+        var item = items[i];
+        var row = document.createElement("div");
+        row.className = "status-item";
+
+        var label = document.createElement("div");
+        label.className = "status-label";
+        label.textContent = item.label;
+
+        var state = document.createElement("div");
+        state.className = "status-state";
+        var dot = document.createElement("span");
+        dot.className = "status-dot";
+        if (item.state === "OK") {
+          dot.className += " status-ok";
+        } else if (item.state === "WARNING") {
+          dot.className += " status-warning";
+        } else {
+          dot.className += " status-fail";
+        }
+        var stateText = document.createElement("span");
+        stateText.textContent = item.state;
+        state.appendChild(dot);
+        state.appendChild(stateText);
+
+        var copy = document.createElement("div");
+        copy.className = "status-copy";
+        var summary = document.createElement("div");
+        summary.className = "status-summary";
+        summary.textContent = item.summary;
+        var detail = document.createElement("div");
+        detail.className = "status-detail";
+        detail.textContent = item.detail;
+        copy.appendChild(summary);
+        copy.appendChild(detail);
+
+        row.appendChild(label);
+        row.appendChild(state);
+        row.appendChild(copy);
+        container.appendChild(row);
+      }
+    }
+
+    function renderLinks(report) {
+      var linkList = document.getElementById("link-list");
+      linkList.innerHTML = "";
+      var labels = [
+        { key: "login", label: "Open Login" },
+        { key: "chat", label: "Open Chat" },
+        { key: "settings", label: "Open Settings" },
+        { key: "runbook", label: "Open Runbook" },
+        { key: "projectFolder", label: "Open Project Folder" }
+      ];
+
+      for (var i = 0; i < labels.length; i++) {
+        var entry = labels[i];
+        var target = report.links && report.links[entry.key] ? report.links[entry.key] : "";
+        var button = document.createElement("button");
+        button.className = "quick-link";
+        button.type = "button";
+        button.disabled = !target;
+        button.onclick = (function(path) {
+          return function() { openTarget(path); };
+        })(target);
+
+        var copy = document.createElement("div");
+        copy.className = "link-copy";
+        var label = document.createElement("div");
+        label.className = "link-label";
+        label.textContent = entry.label;
+        var targetText = document.createElement("div");
+        targetText.className = "link-target";
+        targetText.textContent = target || "Unavailable";
+        copy.appendChild(label);
+        copy.appendChild(targetText);
+
+        var arrow = document.createElement("div");
+        arrow.textContent = target ? "Open" : "-";
+        button.appendChild(copy);
+        button.appendChild(arrow);
+        linkList.appendChild(button);
+      }
+    }
+
+    function getStatusItem(report, key) {
+      if (!report || !report.items) {
+        return null;
+      }
+
+      for (var i = 0; i < report.items.length; i++) {
+        if (report.items[i].key === key) {
+          return report.items[i];
+        }
+      }
+
+      return null;
+    }
+
+    function tryOpenDockerDesktop() {
+      if (!fso.FileExists(dockerDesktopPath)) {
+        return false;
+      }
+
+      openTarget(dockerDesktopPath);
+      return true;
+    }
+
+    function queuePendingAction(action, label, requiresConfirm) {
+      pendingAction = {
+        action: action,
+        label: label,
+        requiresConfirm: requiresConfirm
+      };
+      document.getElementById("busy-text").textContent = "Waiting for current status refresh...";
+    }
+
+    function beginAction(action, label) {
+      pendingAction = null;
+      actionInFlight = true;
+      setButtonsDisabled(true);
+      document.getElementById("busy-text").textContent = label + "...";
+      clearBannerBySources(["action-error", "refresh-error"]);
+    }
+
+    function handleRefreshSuccessBannerState(report, manual) {
+      clearBannerBySources(["refresh-error"]);
+
+      if (bannerSource === "docker-preflight") {
+        var dockerItem = getStatusItem(report, "dockerDaemon");
+        if (dockerItem && dockerItem.state === "OK") {
+          setBanner("");
+        }
+      }
+
+      if (manual && bannerSource === "action-error") {
+        setBanner("");
+      }
+    }
+
+    function handleRefreshFailure(message, rawOutput) {
+      pendingAction = null;
+      actionInFlight = false;
+      refreshInFlight = false;
+      setButtonsDisabled(false);
+      document.getElementById("busy-text").textContent = "";
+      setBanner(message, {
+        source: "refresh-error",
+        sticky: false
+      });
+      if (rawOutput) {
+        setRawOutput(rawOutput);
+        renderReport(null, rawOutput);
+      }
+    }
+
+    function handleDockerPreflightFailure(dockerItem) {
+      var message = dockerItem
+        ? dockerItem.summary + " " + dockerItem.detail
+        : "Docker Desktop preflight failed.";
+
+      if (tryOpenDockerDesktop()) {
+        message += " Docker Desktop is opening now. Wait for the engine to show Running, then click Refresh Status and Start Local again.";
+      } else {
+        message += " Open Docker Desktop manually, wait for Running, then try Start Local again.";
+      }
+
+      setBanner(message, {
+        source: "docker-preflight",
+        sticky: true
+      });
+      completeAction(false);
+    }
+
+    function consumeActionWithFreshReport(action, label, report, alreadyStarted) {
+      if (!alreadyStarted) {
+        beginAction(action, label);
+      }
+
+      if (action === "start") {
+        var dockerItem = getStatusItem(report, "dockerDaemon");
+        if (!dockerItem || dockerItem.state !== "OK") {
+          handleDockerPreflightFailure(dockerItem);
+          return;
+        }
+      }
+
+      executeActionRunner(action, label);
+    }
+
+    function renderReport(report, rawText) {
+      if (report && report.schemaVersion !== 1) {
+        if (!bannerSticky || bannerSource === "schema-warning") {
+          setBanner("Schema warning: expected schemaVersion 1, got " + report.schemaVersion + ".", {
+            source: "schema-warning",
+            sticky: false
+          });
+        }
+      } else if (bannerSource === "schema-warning") {
+        setBanner("");
+      }
+
+      if (report) {
+        lastKnownGoodReport = report;
+        lastFreshReport = report;
+      }
+      lastRawStatus = rawText || lastRawStatus || "";
+
+      var activeReport = report || lastKnownGoodReport;
+      if (!activeReport) {
+        return;
+      }
+
+      document.getElementById("project-path").textContent = projectRoot;
+      document.getElementById("last-checked").textContent = formatCheckedAt(activeReport.checkedAt);
+      setOverallState(activeReport.overallState);
+      renderStatusLists(activeReport);
+      renderLinks(activeReport);
+      document.getElementById("raw-status").textContent = lastRawStatus || JSON.stringify(activeReport, null, 2);
+    }
+
+    function runStatusJob(onSuccess, onError) {
+      var job = createTempJob("ne-status");
+      try {
+        shell.Run(buildStatusRunnerCommand(job), 0, false);
+      } catch (error) {
+        onError("Unable to run status-local.ps1. " + error.message);
+        cleanupTempJob(job);
+        return;
+      }
+
+      pollTempJob(job, REFRESH_TIMEOUT_MS, function(stdout, stderr, exitCode) {
+        var raw = stdout || "";
+        if (!raw && stderr) {
+          onError("status-local.ps1 returned no JSON. " + stderr);
+          cleanupTempJob(job);
+          return;
+        }
+
+        try {
+          var report = JSON.parse(raw);
+          onSuccess(report, raw, stderr, exitCode);
+        } catch (parseError) {
+          onError(
+            "Malformed JSON from status-local.ps1. Keeping the last good status. " + parseError.message,
+            raw || stderr || ""
+          );
+        }
+        cleanupTempJob(job);
+      }, function(message) {
+        onError(message);
+        cleanupTempJob(job);
+      });
+    }
+
+    function execStatusRefresh(manual) {
+      if (actionInFlight || refreshInFlight) {
+        return;
+      }
+
+      refreshInFlight = true;
+
+      if (manual) {
+        document.getElementById("busy-text").textContent = "Refreshing...";
+      }
+
+      runStatusJob(function(report, raw, stderr, exitCode) {
+        refreshInFlight = false;
+        if (stderr && !report.items) {
+          setBanner(stderr, {
+            source: "refresh-error",
+            sticky: false
+          });
+        }
+        handleRefreshSuccessBannerState(report, manual);
+        renderReport(report, raw);
+
+        if (pendingAction) {
+          var queued = pendingAction;
+          pendingAction = null;
+          consumeActionWithFreshReport(queued.action, queued.label, report);
+          return;
+        }
+
+        document.getElementById("busy-text").textContent = "";
+      }, function(message, rawOutput) {
+        handleRefreshFailure(message, rawOutput);
+      });
+    }
+
+    function pollTempJob(job, timeoutMs, onSuccess, onError) {
+      if ((new Date().getTime() - job.startedAt) > timeoutMs) {
+        onError("Command timed out.");
+        return;
+      }
+
+      if (!fso.FileExists(job.exit)) {
+        window.setTimeout(function() { pollTempJob(job, timeoutMs, onSuccess, onError); }, 150);
+        return;
+      }
+
+      var stdout = readUtf8File(job.stdout);
+      var stderr = readUtf8File(job.stderr);
+      var exitRaw = readUtf8File(job.exit);
+      var exitCode = parseInt(exitRaw, 10);
+      if (isNaN(exitCode)) {
+        exitCode = 1;
+      }
+
+      onSuccess(stdout, stderr, exitCode);
+    }
+
+    function completeAction(refreshStatus) {
+      actionInFlight = false;
+      setButtonsDisabled(false);
+      document.getElementById("busy-text").textContent = "";
+      if (refreshStatus) {
+        clearBannerBySources(["docker-preflight", "action-error", "refresh-error"]);
+        execStatusRefresh(false);
+      }
+    }
+
+    function executeActionRunner(action, label) {
+      var job = createTempJob("ne-action-" + action);
+
+      try {
+        shell.Run(buildActionRunnerCommand(action, job), 0, false);
+      } catch (error) {
+        setBanner(label + " failed. " + error.message, {
+          source: "action-error",
+          sticky: true
+        });
+        completeAction(false);
+        cleanupTempJob(job);
+        return;
+      }
+
+      pollTempJob(job, ACTION_TIMEOUT_MS, function(stdout, stderr, exitCode) {
+        var output = "";
+
+        if (stdout) {
+          output += stdout;
+        }
+
+        if (stderr) {
+          output += (output ? "\n" : "") + stderr;
+        }
+
+        if (output) {
+          setRawOutput(output);
+        }
+
+        if (exitCode !== 0) {
+          setBanner(label + " failed. " + (stderr || stdout || ("Exit code " + exitCode + ".")), {
+            source: "action-error",
+            sticky: true
+          });
+          completeAction(false);
+          cleanupTempJob(job);
+          return;
+        }
+
+        completeAction(true);
+        cleanupTempJob(job);
+      }, function(message) {
+        setBanner(label + " failed. " + message, {
+          source: "action-error",
+          sticky: true
+        });
+        completeAction(false);
+        cleanupTempJob(job);
+      });
+    }
+
+    function runAction(action, label, requiresConfirm) {
+      if (actionInFlight) {
+        return;
+      }
+
+      if (requiresConfirm && !window.confirm("Confirm " + label + "?")) {
+        return;
+      }
+
+      if (refreshInFlight) {
+        clearBannerBySources(["action-error", "refresh-error"]);
+        queuePendingAction(action, label, requiresConfirm);
+        return;
+      }
+
+      if (action === "start") {
+        beginAction(action, label);
+        runStatusJob(function(report, raw) {
+          handleRefreshSuccessBannerState(report, false);
+          renderReport(report, raw);
+          consumeActionWithFreshReport(action, label, report, true);
+        }, function(message, rawOutput) {
+          handleRefreshFailure(message, rawOutput);
+        });
+        return;
+      }
+
+      beginAction(action, label);
+      executeActionRunner(action, label);
+    }
+
+    function startAutoRefresh() {
+      if (refreshTimer) {
+        window.clearInterval(refreshTimer);
+      }
+
+      refreshTimer = window.setInterval(function() {
+        if (!actionInFlight) {
+          execStatusRefresh(false);
+        }
+      }, 5000);
+    }
+
+    function init() {
+      document.getElementById("project-path").textContent = projectRoot;
+      renderReport({
+        schemaVersion: 1,
+        checkedAt: null,
+        overallState: "WARNING",
+        links: {
+          login: "http://localhost:3000/login",
+          chat: "http://localhost:3000/network-engineer/chat",
+          settings: "http://localhost:3000/settings",
+          runbook: projectRoot + "\\ADMIN-RUNBOOK.md",
+          projectFolder: projectRoot
+        },
+        items: []
+      }, "");
+
+      execStatusRefresh(false);
+      startAutoRefresh();
+    }
+  </script>
+</head>
+<body onload="init()">
+  <div class="shell">
+    <div class="hero">
+      <div class="hero-copy">
+        <div class="eyebrow">Local operations console</div>
+        <h1>Network Engineer Control Panel</h1>
+        <div class="subtitle">
+          Double-click, check the runtime, and act fast. This panel stays thin on purpose so the scripts keep carrying the logic while the app is still changing.
+        </div>
+      </div>
+      <div class="meta-grid">
+        <div class="meta-row">
+          <div class="meta-label">Project folder</div>
+          <div class="meta-value" id="project-path"></div>
+        </div>
+        <div class="meta-row">
+          <div class="meta-label">Last checked</div>
+          <div class="meta-value" id="last-checked">Waiting for first refresh</div>
+        </div>
+        <div class="meta-row">
+          <div class="meta-label">Overall state</div>
+          <div class="overall-pill">
+            <span class="status-dot" id="overall-dot"></span>
+            <span id="overall-text">Waiting</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="action-primary" type="button" data-action="start" onclick="runAction('start', 'Starting local mode', false)">Start Local</button>
+      <button class="action-secondary" type="button" data-action="refresh" onclick="execStatusRefresh(true)">Refresh Status</button>
+      <button class="action-secondary" type="button" data-action="restart" onclick="runAction('restart', 'Restarting local mode', false)">Restart Local</button>
+      <button class="action-secondary" type="button" data-action="stop" onclick="runAction('stop', 'Stopping local mode', true)">Stop Local</button>
+      <div id="busy-text" class="meta-value"></div>
+    </div>
+
+    <div id="banner" class="banner"></div>
+
+    <div class="status-wrap">
+      <div class="status-panel">
+        <h2 class="section-title">Core checks</h2>
+        <div id="core-status-list" class="status-list"></div>
+
+        <h2 class="section-title" style="margin-top: 18px;">Additional checks</h2>
+        <div id="additional-empty" class="empty-state">No extra checks yet.</div>
+        <div id="additional-status-list" class="status-list"></div>
+      </div>
+
+      <div class="side-panel">
+        <h2 class="section-title">Quick links</h2>
+        <div id="link-list" class="link-list"></div>
+
+        <details style="margin-top: 22px;">
+          <summary>Raw status</summary>
+          <pre id="raw-status"></pre>
+        </details>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

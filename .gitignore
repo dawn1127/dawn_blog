@@ -1,0 +1,16 @@
+node_modules
+.next
+out
+output
+dist
+.runtime/
+.env
+.env.local
+.env.*.local
+coverage
+test-results/
+.codex-*.err
+*.log
+*.tsbuildinfo
+.DS_Store
+Thumbs.db
