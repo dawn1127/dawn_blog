@@ -68,6 +68,13 @@ export async function GET(
           },
         },
       },
+      runs: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: {
+          id: true,
+        },
+      },
     },
   });
 

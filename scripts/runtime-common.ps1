@@ -1,4 +1,4 @@
-$script:RuntimeCommonRoot = $PSScriptRoot
+﻿$script:RuntimeCommonRoot = $PSScriptRoot
 
 Set-StrictMode -Version Latest
 

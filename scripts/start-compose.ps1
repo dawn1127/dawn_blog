@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "runtime-common.ps1")
 
@@ -28,8 +28,11 @@ Push-Location $repoRoot
 try {
   & (Join-Path $PSScriptRoot "check-env.ps1")
   Assert-DockerDaemonAvailable
-  docker compose up -d
-  Write-Host "[OK] Compose mode started."
+  docker compose up -d --build
+  if ($LASTEXITCODE -ne 0) {
+    throw "docker compose up -d --build failed."
+  }
+  Write-Host "[OK] Compose production mode started."
   Write-Host "App URL: http://localhost:3000"
 } finally {
   Pop-Location

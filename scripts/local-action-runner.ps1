@@ -1,4 +1,4 @@
-param(
+﻿param(
   [Parameter(Mandatory)]
   [ValidateSet("start", "restart", "stop")]
   [string]$Action,

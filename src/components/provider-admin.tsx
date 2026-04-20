@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  bootstrapRetryDelayMs,
+  describeBootstrapError,
+  fetchJsonNoStore,
+  shouldRetryBootstrapError,
+  type BootstrapPhase,
+} from "@/lib/client/bootstrap";
 
 type ApiStyle = "openai_compatible" | "openai_responses" | "anthropic_messages";
 
@@ -53,6 +60,12 @@ type ModelForm = {
   notes: string;
 };
 
+type ProviderBootstrapState = {
+  attempt: number;
+  message: string;
+  phase: BootstrapPhase;
+};
+
 const apiStyleOptions: Array<{ value: ApiStyle; label: string }> = [
   { value: "openai_responses", label: "OpenAI Responses" },
   { value: "openai_compatible", label: "Chat Completions compatible" },
@@ -100,6 +113,13 @@ const modelCapabilityFields: Array<[keyof ModelForm, string]> = [
   ["enabled", "Enabled"],
   ["isDefault", "Default"],
 ];
+
+const providerBootstrapMaxAttempts = 4;
+const idleProviderBootstrapState: ProviderBootstrapState = {
+  attempt: 0,
+  message: "",
+  phase: "idle",
+};
 
 function checksToText(checks: ValidationResult["checks"]) {
   return Object.entries(checks)
@@ -170,6 +190,9 @@ export function ProviderAdmin() {
   const [modelForm, setModelForm] = useState<ModelForm>(emptyModelForm);
   const [modelEditForm, setModelEditForm] = useState<ModelForm>(emptyModelForm);
   const [status, setStatus] = useState("");
+  const [providerBootstrap, setProviderBootstrap] = useState<ProviderBootstrapState>(idleProviderBootstrapState);
+  const providerBootstrapTokenRef = useRef(0);
+
   const selectedProvider = useMemo(
     () => providers.find((provider) => provider.id === selectedProviderId),
     [providers, selectedProviderId],
@@ -186,32 +209,87 @@ export function ProviderAdmin() {
     [providers],
   );
   const selectedModel = allModels.find((model) => model.id === selectedModelId);
+  const providerBootstrapBusy = providerBootstrap.phase === "loading" || providerBootstrap.phase === "retrying";
 
-  async function loadProviders(nextSelectedModelId = selectedModelId) {
-    const response = await fetch("/api/admin/providers");
+  const loadProviders = useCallback(
+    async (nextSelectedModelId = selectedModelId) => {
+      const data = await fetchJsonNoStore<{ providers: ProviderConfig[] }>("/api/admin/providers");
+      const nextProvider =
+        data.providers.find((provider) => provider.id === selectedProviderId) ?? data.providers[0];
+      const nextModels = data.providers.flatMap((provider) => provider.models);
+      const nextModel = nextModels.find((model) => model.id === nextSelectedModelId) ?? nextModels[0];
 
-    if (!response.ok) {
-      setStatus("讀取 provider 失敗。");
-      return;
+      setProviders(data.providers);
+      setSelectedProviderId(nextProvider?.id ?? "");
+      setProviderEditForm(providerToEditForm(nextProvider));
+      setSelectedModelId(nextModel?.id ?? "");
+      setModelEditForm(modelToForm(nextModel));
+    },
+    [selectedModelId, selectedProviderId],
+  );
+
+  const bootstrapProviders = useCallback(async () => {
+    const token = ++providerBootstrapTokenRef.current;
+
+    for (let attempt = 1; attempt <= providerBootstrapMaxAttempts; attempt += 1) {
+      const phase: BootstrapPhase = attempt === 1 ? "loading" : "retrying";
+      setProviderBootstrap({
+        attempt,
+        message:
+          attempt === 1
+            ? "正在讀取 provider 與 model 設定…"
+            : `讀取 provider 失敗，正在重試（${attempt}/${providerBootstrapMaxAttempts}）…`,
+        phase,
+      });
+
+      try {
+        await loadProviders();
+
+        if (providerBootstrapTokenRef.current !== token) {
+          return;
+        }
+
+        setProviderBootstrap({
+          attempt,
+          message: "",
+          phase: "ready",
+        });
+        return;
+      } catch (error) {
+        if (providerBootstrapTokenRef.current !== token) {
+          return;
+        }
+
+        const errorMessage = describeBootstrapError(error);
+
+        if (!shouldRetryBootstrapError(error) || attempt === providerBootstrapMaxAttempts) {
+          setProviderBootstrap({
+            attempt,
+            message: `讀取 provider 失敗：${errorMessage}`,
+            phase: "failed",
+          });
+          return;
+        }
+
+        await new Promise((resolve) => window.setTimeout(resolve, bootstrapRetryDelayMs(attempt)));
+      }
     }
-
-    const data = (await response.json()) as { providers: ProviderConfig[] };
-    const nextProvider =
-      data.providers.find((provider) => provider.id === selectedProviderId) ?? data.providers[0];
-    const nextModels = data.providers.flatMap((provider) => provider.models);
-    const nextModel = nextModels.find((model) => model.id === nextSelectedModelId) ?? nextModels[0];
-
-    setProviders(data.providers);
-    setSelectedProviderId(nextProvider?.id ?? "");
-    setProviderEditForm(providerToEditForm(nextProvider));
-    setSelectedModelId(nextModel?.id ?? "");
-    setModelEditForm(modelToForm(nextModel));
-  }
+  }, [loadProviders]);
 
   useEffect(() => {
-    void Promise.resolve().then(() => loadProviders());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    const timer = window.setTimeout(() => {
+      void bootstrapProviders();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+      providerBootstrapTokenRef.current += 1;
+    };
+  }, [bootstrapProviders]);
+
+  function markBootstrapReady() {
+    setProviderBootstrap((current) => ({ ...current, attempt: 0, message: "", phase: "ready" }));
+  }
 
   function selectProvider(providerId: string) {
     const provider = providers.find((item) => item.id === providerId);
@@ -230,7 +308,7 @@ export function ProviderAdmin() {
 
   async function createProvider(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setStatus("新增 provider 中...");
+    setStatus("新增 provider 中…");
     const response = await fetch("/api/admin/providers", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -245,6 +323,7 @@ export function ProviderAdmin() {
     setProviderForm(emptyProviderForm);
     setStatus("Provider 已新增，API key 已加密保存。");
     await loadProviders();
+    markBootstrapReady();
   }
 
   async function updateProvider(event: React.FormEvent<HTMLFormElement>) {
@@ -280,6 +359,7 @@ export function ProviderAdmin() {
     setProviderEditForm((current) => ({ ...current, apiKey: "" }));
     setStatus("Provider 已保存。");
     await loadProviders();
+    markBootstrapReady();
   }
 
   async function createModel(event: React.FormEvent<HTMLFormElement>) {
@@ -293,7 +373,11 @@ export function ProviderAdmin() {
     const response = await fetch(`/api/admin/providers/${selectedProvider.id}/models`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...modelPayload(modelForm), maxInputTokens: modelForm.maxInputTokens ? Number(modelForm.maxInputTokens) : undefined, notes: modelForm.notes || undefined }),
+      body: JSON.stringify({
+        ...modelPayload(modelForm),
+        maxInputTokens: modelForm.maxInputTokens ? Number(modelForm.maxInputTokens) : undefined,
+        notes: modelForm.notes || undefined,
+      }),
     });
 
     if (!response.ok) {
@@ -305,6 +389,7 @@ export function ProviderAdmin() {
     setModelForm(emptyModelForm);
     setStatus("Model 已新增。");
     await loadProviders(data.model.id);
+    markBootstrapReady();
   }
 
   async function updateModel(event: React.FormEvent<HTMLFormElement>) {
@@ -328,10 +413,11 @@ export function ProviderAdmin() {
 
     setStatus("Model 已保存。");
     await loadProviders(selectedModel.id);
+    markBootstrapReady();
   }
 
   async function validateModel(modelId: string) {
-    setStatus("測試連線中...");
+    setStatus("測試連線中…");
     const response = await fetch(`/api/admin/models/${modelId}/validate`, { method: "POST" });
     const result = (await response.json()) as ValidationResult;
 
@@ -347,6 +433,7 @@ export function ProviderAdmin() {
 
     setStatus(response.ok ? "Provider 已更新。" : await response.text());
     await loadProviders();
+    markBootstrapReady();
   }
 
   async function toggleModel(model: ModelConfig) {
@@ -358,6 +445,7 @@ export function ProviderAdmin() {
 
     setStatus(response.ok ? "Model 已更新。" : await response.text());
     await loadProviders(model.id);
+    markBootstrapReady();
   }
 
   async function deleteProvider(provider: ProviderConfig) {
@@ -374,6 +462,7 @@ export function ProviderAdmin() {
 
     setStatus("Provider deleted.");
     await loadProviders();
+    markBootstrapReady();
   }
 
   async function deleteModel(model: ModelConfig) {
@@ -390,6 +479,7 @@ export function ProviderAdmin() {
 
     setStatus("Model deleted.");
     await loadProviders();
+    markBootstrapReady();
   }
 
   function renderModelFields(form: ModelForm, setForm: (form: ModelForm) => void) {
@@ -443,6 +533,19 @@ export function ProviderAdmin() {
   return (
     <div className="provider-admin-shell">
       {status ? <p className="status-line provider-status">{status}</p> : null}
+      {providerBootstrap.phase !== "ready" && providerBootstrap.phase !== "idle" ? (
+        <div className={`bootstrap-status ${providerBootstrap.phase === "failed" ? "failed" : "pending"} provider-status-banner`}>
+          <span>{providerBootstrap.message}</span>
+          <button
+            className="button secondary"
+            disabled={providerBootstrapBusy}
+            onClick={() => void bootstrapProviders()}
+            type="button"
+          >
+            重新載入
+          </button>
+        </div>
+      ) : null}
       <div className="provider-admin-top">
         <section className="settings-section">
           <h3>Providers</h3>
@@ -652,11 +755,7 @@ export function ProviderAdmin() {
                   </td>
                   <td>{model.enabled ? "enabled" : "disabled"}</td>
                   <td className="button-row">
-                    <button
-                      className="button secondary"
-                      onClick={() => selectModel(model, model.providerId)}
-                      type="button"
-                    >
+                    <button className="button secondary" onClick={() => selectModel(model, model.providerId)} type="button">
                       編輯
                     </button>
                     <button className="button secondary" onClick={() => void validateModel(model.id)} type="button">

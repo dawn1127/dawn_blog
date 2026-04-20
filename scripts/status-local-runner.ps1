@@ -1,4 +1,4 @@
-param(
+﻿param(
   [Parameter(Mandatory)]
   [string]$StdOutFile,
   [Parameter(Mandatory)]

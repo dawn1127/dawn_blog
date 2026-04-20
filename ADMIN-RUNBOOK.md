@@ -29,6 +29,14 @@ cd F:\codex\network_engineer_project
 .\scripts\stop-local.ps1
 ```
 
+## 7. Production / External Mode Notes
+
+- `.\scripts\start-local.ps1` is for development only and runs `npm run dev`.
+- `.\scripts\start-compose.ps1` is the recommended production/external mode and now runs `docker compose up -d --build`.
+- Stop local mode before starting compose mode.
+- Point Nginx Proxy Manager HTTPS traffic to `http://192.168.1.20:3000`.
+- Do not point the public domain at the local dev server.
+
 用途：
 
 - `start-local.ps1`：開網站、worker、基礎 Docker 服務

@@ -2,8 +2,16 @@
 
 import Link from "next/link";
 import { type ComponentPropsWithoutRef, type ReactNode, isValidElement, useEffect, useRef, useState } from "react";
+import { Highlight, Prism, type PrismTheme } from "prism-react-renderer";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import {
+  bootstrapRetryDelayMs,
+  describeBootstrapError,
+  fetchJsonNoStore,
+  shouldRetryBootstrapError,
+  type BootstrapPhase,
+} from "@/lib/client/bootstrap";
 import { extractQuickReplies } from "@/lib/chat/quick-replies";
 import { documentAccept, getUploadKind, imageAccept } from "@/lib/file-types";
 import { getSettingsHref } from "@/lib/network-navigation";
@@ -99,6 +107,8 @@ type ConversationDraftState = {
 };
 
 type ConversationUiState = {
+  activeReplyIds: string[];
+  awaitingConversationId: boolean;
   loadToken: number;
   messages: UiMessage[];
   phase: ConversationStreamPhase;
@@ -112,6 +122,64 @@ type ConversationState = {
   ui: ConversationUiState;
 };
 
+const softCodeTheme: PrismTheme = {
+  plain: {
+    color: "#1f2328",
+    backgroundColor: "transparent",
+  },
+  styles: [
+    {
+      types: ["comment", "prolog", "doctype", "cdata"],
+      style: {
+        color: "#9ca3af",
+        fontStyle: "italic",
+      },
+    },
+    {
+      types: ["punctuation", "operator"],
+      style: {
+        color: "#7b8594",
+      },
+    },
+    {
+      types: ["property", "tag", "boolean", "number", "constant", "symbol", "deleted"],
+      style: {
+        color: "#95523a",
+      },
+    },
+    {
+      types: ["selector", "attr-name", "string", "char", "builtin", "inserted"],
+      style: {
+        color: "#2f7856",
+      },
+    },
+    {
+      types: ["keyword", "atrule"],
+      style: {
+        color: "#4a659a",
+      },
+    },
+    {
+      types: ["function", "class-name"],
+      style: {
+        color: "#2b6273",
+      },
+    },
+    {
+      types: ["regex", "important", "variable"],
+      style: {
+        color: "#896231",
+      },
+    },
+    {
+      types: ["bold"],
+      style: {
+        fontWeight: "700",
+      },
+    },
+  ],
+};
+
 type PersistedConversationMessage = {
   attachments: MessageAttachment[];
   content: string;
@@ -120,6 +188,7 @@ type PersistedConversationMessage = {
   provider: { name: string } | null;
   providerResponseModel: string | null;
   role: "user" | "assistant" | "system" | "tool";
+  runs?: Array<{ id: string }>;
   status: "streaming" | "completed" | "failed";
 };
 
@@ -140,16 +209,75 @@ type PreviewImageState = {
   originalName: string;
 };
 
+type WorkspaceBootstrapResourceKey = "models" | "conversations" | "folders" | "files";
+
+type WorkspaceBootstrapResourceState = {
+  message: string;
+  phase: BootstrapPhase;
+};
+
+type WorkspaceBootstrapState = {
+  attempt: number;
+  message: string;
+  phase: BootstrapPhase;
+  resources: Record<WorkspaceBootstrapResourceKey, WorkspaceBootstrapResourceState>;
+};
+
+type ReplyStreamControllerMap = Record<string, AbortController>;
+type ReplyThinkingTimerMap = Record<string, number>;
+
 const nativeFileLimitBytes = 50 * 1024 * 1024;
 const maxConcurrentConversationStreams = 3;
 const draftConversationPrefix = "draft:";
 const extendedThinkingDelayMs = 1200;
+const workspaceBootstrapMaxAttempts = 4;
 const internalStreamErrorPattern = /controller is already closed|invalid state|readablestream/i;
+const canceledReplyMessage = "已停止回覆";
 const interruptedReplyMessage = "回覆中斷，請再試一次。";
-const thinkingOptions: Array<{ id: ThinkingMode; label: string; description: string }> = [
-  { id: "standard", label: "標準", description: "日常聊天與一般分析。" },
-  { id: "extended", label: "加長思考", description: "讓模型花更多時間整理推理與答案。" },
+const thinkingOptions: Array<{ id: ThinkingMode; label: string; description: string; detail: string }> = [
+  {
+    id: "standard",
+    label: "標準",
+    description: "較快開始回答，文字會逐步出現。",
+    detail: "適合日常聊天、查詢與一般分析。通常會很快開始輸出，看起來像 AI 一邊整理、一邊把答案慢慢寫出來。",
+  },
+  {
+    id: "extended",
+    label: "加長思考",
+    description: "先深度整理，再輸出最終答案。",
+    detail:
+      "適合複雜規劃、排錯、比較與長鏈推理。AI 會先花較長時間完整思考，畫面可能先停在「深度思考中」；等答案整理好後，才會集中或快速輸出最終回答。",
+  },
 ];
+
+const workspaceBootstrapResourceLabels: Record<WorkspaceBootstrapResourceKey, string> = {
+  conversations: "對話資料",
+  files: "檔案資料",
+  folders: "Project 資料",
+  models: "模型設定",
+};
+
+const workspaceBootstrapResourceKeys: WorkspaceBootstrapResourceKey[] = ["models", "conversations", "folders", "files"];
+
+function createWorkspaceBootstrapResources(
+  phase: BootstrapPhase = "idle",
+): Record<WorkspaceBootstrapResourceKey, WorkspaceBootstrapResourceState> {
+  return {
+    conversations: { message: "", phase },
+    files: { message: "", phase },
+    folders: { message: "", phase },
+    models: { message: "", phase },
+  };
+}
+
+function createWorkspaceBootstrapState(): WorkspaceBootstrapState {
+  return {
+    attempt: 0,
+    message: "",
+    phase: "idle",
+    resources: createWorkspaceBootstrapResources(),
+  };
+}
 
 function attachmentStatusLabel(status: AttachmentStatus) {
   switch (status) {
@@ -233,6 +361,11 @@ function formatChatErrorMessage(message: string) {
   return normalizedMessage === interruptedReplyMessage ? normalizedMessage : `請求失敗：${normalizedMessage}`;
 }
 
+function appendCanceledReplyMessage(content: string) {
+  const trimmed = content.trim();
+  return trimmed ? `${trimmed}\n\n${canceledReplyMessage}` : canceledReplyMessage;
+}
+
 function messageStatusLabel(message: UiMessage) {
   if (message.status === "failed") {
     return "回覆中斷";
@@ -266,14 +399,18 @@ function conversationPhaseLabel(phase: ConversationStreamPhase) {
   }
 }
 
-function formatCodeLanguage(className?: string) {
-  const match = className?.match(/language-([\w-]+)/i)?.[1];
+function formatConversationPhaseLabel(phase: ConversationStreamPhase, activeReplyCount: number) {
+  const label = conversationPhaseLabel(phase) || (phase === "completed" ? "Done" : "");
 
-  if (!match) {
-    return "Code";
+  if (!label) {
+    return "";
   }
 
-  return match
+  return activeReplyCount > 1 && isConversationBusyPhase(phase) ? `${label} (${activeReplyCount})` : label;
+}
+
+function formatCodeLanguageLabel(language: string) {
+  return language
     .split(/[-_]/)
     .filter(Boolean)
     .map((part) => {
@@ -284,6 +421,40 @@ function formatCodeLanguage(className?: string) {
       return `${part.charAt(0).toUpperCase()}${part.slice(1)}`;
     })
     .join(" ");
+}
+
+function getCodeLanguageInfo(className?: string) {
+  const match = className?.match(/language-([\w-]+)/i)?.[1];
+
+  if (!match) {
+    return {
+      label: "TEXT",
+      prismLanguage: "text",
+    };
+  }
+
+  const rawLanguage = match.toLowerCase();
+  const aliasMap: Record<string, string> = {
+    js: "javascript",
+    jsx: "jsx",
+    md: "markdown",
+    plain: "text",
+    plaintext: "text",
+    py: "python",
+    rb: "ruby",
+    rs: "rust",
+    sh: "bash",
+    shell: "bash",
+    text: "text",
+    ts: "typescript",
+    yml: "yaml",
+  };
+  const prismLanguage = aliasMap[rawLanguage] ?? rawLanguage;
+
+  return {
+    label: formatCodeLanguageLabel(rawLanguage),
+    prismLanguage: Prism.languages[prismLanguage] ? prismLanguage : "text",
+  };
 }
 
 function createDraftConversationKey() {
@@ -298,12 +469,17 @@ function isConversationBusyPhase(phase: ConversationStreamPhase) {
   return phase === "requesting" || phase === "thinking" || phase === "streaming";
 }
 
+function isReplyStreaming(message: UiMessage) {
+  return message.role === "assistant" && message.status === "streaming";
+}
+
 function isPristineDraftConversation(state: ConversationState) {
   return (
     !state.conversationId &&
     state.ui.messages.length === 0 &&
     state.draft.input.trim().length === 0 &&
     state.draft.attachments.length === 0 &&
+    !state.ui.awaitingConversationId &&
     !isConversationBusyPhase(state.ui.phase)
   );
 }
@@ -313,6 +489,20 @@ function truncateQuickReplyLabel(value: string) {
 }
 
 function deriveConversationPhaseFromMessages(messages: UiMessage[]): ConversationStreamPhase {
+  const activeReplies = messages.filter(isReplyStreaming);
+
+  if (activeReplies.some((message) => message.streamPhase === "thinking")) {
+    return "thinking";
+  }
+
+  if (activeReplies.some((message) => message.streamPhase === "requesting")) {
+    return "requesting";
+  }
+
+  if (activeReplies.length > 0) {
+    return "streaming";
+  }
+
   const latestAssistant = [...messages].reverse().find((message) => message.role === "assistant");
 
   if (!latestAssistant) {
@@ -328,6 +518,20 @@ function deriveConversationPhaseFromMessages(messages: UiMessage[]): Conversatio
   }
 
   return "completed";
+}
+
+function collectActiveReplyIds(messages: UiMessage[]) {
+  return messages.filter(isReplyStreaming).map((message) => message.id);
+}
+
+function syncConversationUiState(ui: ConversationUiState): ConversationUiState {
+  const activeReplyIds = collectActiveReplyIds(ui.messages);
+
+  return {
+    ...ui,
+    activeReplyIds,
+    phase: deriveConversationPhaseFromMessages(ui.messages),
+  };
 }
 
 function createConversationState({
@@ -360,6 +564,8 @@ function createConversationState({
       thinkingMode,
     },
     ui: {
+      activeReplyIds: [],
+      awaitingConversationId: false,
       loadToken: 0,
       messages,
       phase,
@@ -373,6 +579,8 @@ function toUiMessages(messages: PersistedConversationMessage[]): UiMessage[] {
     .filter((message) => message.role === "user" || message.role === "assistant")
     .map((message) => ({
       id: message.id,
+      dbMessageId: message.id,
+      runId: message.runs?.[0]?.id,
       role: message.role as "user" | "assistant",
       content: message.content,
       status: message.status,
@@ -412,8 +620,9 @@ function toMessageAttachments(attachments: ComposerAttachment[]) {
     });
 }
 
-function CodeBlock({ code, language }: { code: string; language: string }) {
+function CodeBlock({ code, language, languageLabel }: { code: string; language: string; languageLabel: string }) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const copyLabel = copyState === "copied" ? "Copied" : copyState === "failed" ? "Retry" : "Copy";
 
   async function handleCopy() {
     try {
@@ -429,18 +638,39 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
   return (
     <div className="chat-code-block">
       <div className="chat-code-block-head">
-        <span className="chat-code-language">{language}</span>
+        <span className="chat-code-language">{languageLabel}</span>
         <button
+          aria-label={`${copyLabel} code block`}
           className={`chat-code-copy ${copyState !== "idle" ? copyState : ""}`.trim()}
           onClick={() => void handleCopy()}
           type="button"
         >
-          {copyState === "copied" ? "已複製" : copyState === "failed" ? "再試一次" : "Copy"}
+          {copyLabel}
         </button>
       </div>
-      <pre>
-        <code>{code}</code>
-      </pre>
+      <Highlight code={code} language={language} theme={softCodeTheme}>
+        {({ className, tokens, getLineProps, getTokenProps }) => (
+          <pre className={className}>
+            <code>
+              {tokens.map((line, lineIndex) => {
+                const lineProps = getLineProps({ line });
+
+                return (
+                  <span
+                    {...lineProps}
+                    className={lineProps.className ? `${lineProps.className} chat-code-line` : "chat-code-line"}
+                    key={lineIndex}
+                  >
+                    {line.map((token, tokenIndex) => (
+                      <span key={tokenIndex} {...getTokenProps({ token })} />
+                    ))}
+                  </span>
+                );
+              })}
+            </code>
+          </pre>
+        )}
+      </Highlight>
     </div>
   );
 }
@@ -450,9 +680,9 @@ function MarkdownPre({ children }: ComponentPropsWithoutRef<"pre">) {
 
   if (isValidElement<{ children?: ReactNode; className?: string }>(codeElement)) {
     const code = toNodeText(codeElement.props.children).replace(/\n$/, "");
-    const language = formatCodeLanguage(codeElement.props.className);
+    const { label, prismLanguage } = getCodeLanguageInfo(codeElement.props.className);
 
-    return <CodeBlock code={code} language={language} />;
+    return <CodeBlock code={code} language={prismLanguage} languageLabel={label} />;
   }
 
   return <pre>{children}</pre>;
@@ -525,15 +755,17 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
   const [openConversationMenuId, setOpenConversationMenuId] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<PreviewImageState | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [workspaceBootstrap, setWorkspaceBootstrap] = useState<WorkspaceBootstrapState>(createWorkspaceBootstrapState);
   const documentInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const attachmentMenuRef = useRef<HTMLDivElement>(null);
   const smartMenuRef = useRef<HTMLDivElement>(null);
   const conversationStatesRef = useRef<Record<ConversationKey, ConversationState>>(conversationBootstrap.initialConversationStates);
-  const streamControllersRef = useRef<Record<ConversationKey, AbortController>>({});
-  const thinkingTimersRef = useRef<Record<ConversationKey, number>>({});
+  const streamControllersRef = useRef<ReplyStreamControllerMap>({});
+  const thinkingTimersRef = useRef<ReplyThinkingTimerMap>({});
   const hydrateTokensRef = useRef<Record<ConversationKey, number>>({});
   const previousBodyOverflowRef = useRef("");
+  const workspaceBootstrapTokenRef = useRef(0);
 
   function commitConversationStates(next: Record<ConversationKey, ConversationState>) {
     conversationStatesRef.current = next;
@@ -615,7 +847,16 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
   ) {
     const current = conversationStatesRef.current;
     const base = current[key] ?? buildConversationStateForKey(key, options);
-    const nextState = updater(base);
+    const candidateState = updater(base);
+
+    if (candidateState === base) {
+      return base;
+    }
+
+    const nextState = {
+      ...candidateState,
+      ui: syncConversationUiState(candidateState.ui),
+    };
 
     if (current[key] === nextState) {
       return nextState;
@@ -663,33 +904,82 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
     );
   }
 
-  function clearThinkingTimer(key: ConversationKey) {
-    const timer = thinkingTimersRef.current[key];
+  function clearThinkingTimer(replyId: string) {
+    const timer = thinkingTimersRef.current[replyId];
 
     if (timer) {
       window.clearTimeout(timer);
-      delete thinkingTimersRef.current[key];
+      delete thinkingTimersRef.current[replyId];
     }
   }
 
-  function abortConversationStream(key: ConversationKey) {
-    const controller = streamControllersRef.current[key];
+  function abortReplyStream(replyId: string) {
+    const controller = streamControllersRef.current[replyId];
 
     if (controller) {
       controller.abort();
-      delete streamControllersRef.current[key];
+      delete streamControllersRef.current[replyId];
     }
   }
 
-  function clearDraftAttachments(key: ConversationKey) {
-    const attachments = conversationStatesRef.current[key]?.draft.attachments ?? [];
-    revokeAttachmentPreviews(attachments);
-    patchConversationDraft(key, (draft) => ({ ...draft, attachments: [] }));
+  function abortConversationReplies(key: ConversationKey) {
+    const state = conversationStatesRef.current[key];
+
+    if (!state) {
+      return;
+    }
+
+    state.ui.activeReplyIds.forEach((replyId) => {
+      clearThinkingTimer(replyId);
+      abortReplyStream(replyId);
+    });
+  }
+
+  async function cancelConversationReplies(key: ConversationKey) {
+    const state = conversationStatesRef.current[key];
+
+    if (!state || state.ui.activeReplyIds.length === 0) {
+      return;
+    }
+
+    const activeMessages = state.ui.messages.filter((message) => state.ui.activeReplyIds.includes(message.id));
+    activeMessages.forEach((message) => {
+      clearThinkingTimer(message.id);
+      abortReplyStream(message.id);
+    });
+
+    patchConversationState(key, (currentState) => ({
+      ...currentState,
+      ui: {
+        ...currentState.ui,
+        statusMessage: canceledReplyMessage,
+        messages: currentState.ui.messages.map((message) =>
+          state.ui.activeReplyIds.includes(message.id)
+            ? {
+                ...message,
+                content: appendCanceledReplyMessage(message.content),
+                status: "failed",
+                streamPhase: "failed",
+              }
+            : message,
+        ),
+      },
+    }));
+
+    await Promise.all(
+      activeMessages
+        .map((message) => message.runId)
+        .filter((runId): runId is string => Boolean(runId))
+        .map((runId) =>
+          fetch(`/api/chat/runs/${encodeURIComponent(runId)}/cancel`, {
+            method: "POST",
+          }).catch(() => undefined),
+        ),
+    );
   }
 
   function removeConversationState(key: ConversationKey) {
-    abortConversationStream(key);
-    clearThinkingTimer(key);
+    abortConversationReplies(key);
     const current = conversationStatesRef.current;
     const state = current[key];
 
@@ -720,16 +1010,6 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
     delete next[fromKey];
     commitConversationStates(next);
 
-    if (streamControllersRef.current[fromKey]) {
-      streamControllersRef.current[toKey] = streamControllersRef.current[fromKey];
-      delete streamControllersRef.current[fromKey];
-    }
-
-    if (thinkingTimersRef.current[fromKey]) {
-      thinkingTimersRef.current[toKey] = thinkingTimersRef.current[fromKey];
-      delete thinkingTimersRef.current[fromKey];
-    }
-
     if (hydrateTokensRef.current[fromKey]) {
       hydrateTokensRef.current[toKey] = hydrateTokensRef.current[fromKey];
       delete hydrateTokensRef.current[fromKey];
@@ -742,11 +1022,11 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
     return toKey;
   }
 
-  function scheduleThinkingPhase(key: ConversationKey, assistantMessageId: string) {
-    clearThinkingTimer(key);
-    thinkingTimersRef.current[key] = window.setTimeout(() => {
-      patchConversationState(key, (state) => {
-        if (!isConversationBusyPhase(state.ui.phase)) {
+  function scheduleThinkingPhase(conversationKey: ConversationKey, assistantMessageId: string) {
+    clearThinkingTimer(assistantMessageId);
+    thinkingTimersRef.current[assistantMessageId] = window.setTimeout(() => {
+      patchConversationState(conversationKey, (state) => {
+        if (!state.ui.activeReplyIds.includes(assistantMessageId)) {
           return state;
         }
 
@@ -766,8 +1046,8 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
     }, extendedThinkingDelayMs);
   }
 
-  function activeStreamingConversationCount() {
-    return Object.values(conversationStatesRef.current).filter((state) => isConversationBusyPhase(state.ui.phase)).length;
+  function activeStreamingReplyCount() {
+    return Object.values(conversationStatesRef.current).reduce((total, state) => total + state.ui.activeReplyIds.length, 0);
   }
 
   const activeConversationState =
@@ -793,31 +1073,52 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
   })();
   const completedRecentFiles = files.filter((file) => file.parseStatus === "completed" && !file.deletedAt).slice(0, 8);
   const unfiledConversations = conversations.filter((conversation) => !conversation.folderId);
-  const activeConversationBusy = isConversationBusyPhase(activeConversationState.ui.phase);
+  const activeReplyCount = activeConversationState.ui.activeReplyIds.length;
+  const activeConversationBusy = activeReplyCount > 0;
+  const waitingForConversationId =
+    isDraftConversationKey(activeConversationKey) &&
+    !activeConversationState.conversationId &&
+    activeConversationState.ui.awaitingConversationId;
+  const globalReplyLimitReached =
+    Object.values(conversationStates).reduce((total, state) => total + state.ui.activeReplyIds.length, 0) >=
+    maxConcurrentConversationStreams;
   const canSend =
     Boolean(activeConversationState.draft.modelConfigId) &&
-    !activeConversationBusy &&
+    !waitingForConversationId &&
+    !globalReplyLimitReached &&
     (activeConversationState.draft.input.trim().length > 0 || activeConversationState.draft.attachments.length > 0);
   const thinkingLabel = thinkingOptions.find((option) => option.id === activeConversationState.draft.thinkingMode)?.label ?? "標準";
   const currentConversation = conversations.find((conversation) => conversation.id === activeConversationState.conversationId);
   const activeFolder = folders.find((folder) => folder.id === (activeConversationState.draft.folderId ?? activeFolderId));
   const headerTitle = currentConversation?.title ?? (activeFolder ? `${activeFolder.name} 的新對話` : "新對話");
   const composerStatus = activeConversationState.ui.statusMessage || workspaceStatus;
+  const workspaceBootstrapBusy = workspaceBootstrap.phase === "loading" || workspaceBootstrap.phase === "retrying";
+  const modelsBootstrap = workspaceBootstrap.resources.models;
+  const modelStatusText = selectedModel
+    ? `${selectedModel.providerName} / ${selectedModel.displayName}`
+    : modelsBootstrap.phase === "loading" || modelsBootstrap.phase === "retrying"
+      ? "正在載入模型設定…"
+      : modelsBootstrap.phase === "failed"
+        ? "模型資料載入失敗，請重新載入。"
+        : "尚未配置可用模型";
+  const emptyChatTitle =
+    activeConversationState.ui.messages.length === 0 && workspaceBootstrap.phase !== "ready"
+      ? workspaceBootstrap.phase === "failed"
+        ? "工作區資料尚未恢復"
+        : "正在恢復工作區…"
+      : "有什麼可以幫你？";
+  const emptyChatDescription =
+    activeConversationState.ui.messages.length === 0 && workspaceBootstrap.phase !== "ready"
+      ? workspaceBootstrap.message || "正在重新讀取模型、對話、Project 與檔案資料。"
+      : "可以貼上截圖、拖入圖片，或加入文件一起問。";
 
   async function fetchFiles() {
-    const response = await fetch("/api/files");
-
-    if (!response.ok) {
-      throw new Error(await response.text());
-    }
-
-    const data = (await response.json()) as { files: FileAsset[] };
+    const data = await fetchJsonNoStore<{ files: FileAsset[] }>("/api/files");
     return data.files;
   }
 
   async function loadModels() {
-    const response = await fetch("/api/models");
-    const data = (await response.json()) as { models: ModelOption[] };
+    const data = await fetchJsonNoStore<{ models: ModelOption[] }>("/api/models");
     setModels(data.models);
 
     const firstModelId = data.models[0]?.id ?? "";
@@ -851,8 +1152,7 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
   }
 
   async function loadConversations() {
-    const response = await fetch("/api/conversations");
-    const data = (await response.json()) as { conversations: ConversationItem[] };
+    const data = await fetchJsonNoStore<{ conversations: ConversationItem[] }>("/api/conversations");
     setConversations(data.conversations);
   }
 
@@ -873,12 +1173,124 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
     setFiles(nextFiles);
   }
 
-  useEffect(() => {
-    void Promise.resolve()
-      .then(() => Promise.all([loadModels(), loadConversations(), loadFolders(), loadFiles()]))
-      .catch(() => {
-        setWorkspaceStatus("初始化資料失敗。");
+  async function loadFoldersBootstrap() {
+    const data = await fetchJsonNoStore<{ folders: ConversationFolder[] }>("/api/conversation-folders");
+    setFolders(data.folders);
+  }
+
+  async function bootstrapWorkspace() {
+    const token = ++workspaceBootstrapTokenRef.current;
+    const resourceStates = createWorkspaceBootstrapResources();
+    let pending = [...workspaceBootstrapResourceKeys];
+
+    for (let attempt = 1; attempt <= workspaceBootstrapMaxAttempts && pending.length > 0; attempt += 1) {
+      if (workspaceBootstrapTokenRef.current !== token) {
+        return;
+      }
+
+      const phase: BootstrapPhase = attempt === 1 ? "loading" : "retrying";
+      pending.forEach((resource) => {
+        resourceStates[resource] = {
+          message:
+            attempt === 1
+              ? `正在讀取${workspaceBootstrapResourceLabels[resource]}…`
+              : `正在重試${workspaceBootstrapResourceLabels[resource]}…`,
+          phase,
+        };
       });
+
+      setWorkspaceBootstrap({
+        attempt,
+        message:
+          attempt === 1
+            ? "正在載入工作區資料…"
+            : `工作區初始化失敗，正在重試（${attempt}/${workspaceBootstrapMaxAttempts}）…`,
+        phase,
+        resources: { ...resourceStates },
+      });
+
+      const nextPending: WorkspaceBootstrapResourceKey[] = [];
+      const terminalFailures: Array<{ key: WorkspaceBootstrapResourceKey; message: string }> = [];
+
+      for (const resource of pending) {
+        try {
+          if (resource === "models") {
+            await loadModels();
+          } else if (resource === "conversations") {
+            await loadConversations();
+          } else if (resource === "folders") {
+            await loadFoldersBootstrap();
+          } else {
+            await loadFiles();
+          }
+
+          resourceStates[resource] = {
+            message: "",
+            phase: "ready",
+          };
+        } catch (error) {
+          const errorMessage = describeBootstrapError(error);
+          resourceStates[resource] = {
+            message: errorMessage,
+            phase: "failed",
+          };
+
+          if (!shouldRetryBootstrapError(error) || attempt === workspaceBootstrapMaxAttempts) {
+            terminalFailures.push({ key: resource, message: errorMessage });
+          } else {
+            nextPending.push(resource);
+          }
+        }
+      }
+
+      if (workspaceBootstrapTokenRef.current !== token) {
+        return;
+      }
+
+      if (terminalFailures.length > 0) {
+        const failureSummary = terminalFailures
+          .map(({ key, message }) => `${workspaceBootstrapResourceLabels[key]}：${message}`)
+          .join("；");
+
+        setWorkspaceBootstrap({
+          attempt,
+          message: `工作區載入失敗：${failureSummary}`,
+          phase: "failed",
+          resources: { ...resourceStates },
+        });
+        setWorkspaceStatus(
+          terminalFailures.some(({ key }) => key === "models")
+            ? "模型資料載入失敗，請重新載入。"
+            : "工作區資料載入失敗，請重新載入。",
+        );
+        return;
+      }
+
+      if (nextPending.length === 0) {
+        setWorkspaceBootstrap({
+          attempt,
+          message: "",
+          phase: "ready",
+          resources: { ...resourceStates },
+        });
+        setWorkspaceStatus("");
+        return;
+      }
+
+      pending = nextPending;
+      await new Promise((resolve) => window.setTimeout(resolve, bootstrapRetryDelayMs(attempt)));
+    }
+  }
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void bootstrapWorkspace();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+      workspaceBootstrapTokenRef.current += 1;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -950,6 +1362,55 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
     [],
   );
 
+  function mergeHydratedMessages(localMessages: UiMessage[], persistedMessages: PersistedConversationMessage[]) {
+    const persistedUiMessages = toUiMessages(persistedMessages);
+    const localByPersistedId = new Map<string, UiMessage>();
+    const unmatchedLocalMessages: UiMessage[] = [];
+
+    for (const localMessage of localMessages) {
+      const persistedId = localMessage.dbMessageId ?? (!isDraftConversationKey(localMessage.id) ? localMessage.id : undefined);
+
+      if (persistedId) {
+        localByPersistedId.set(persistedId, localMessage);
+        continue;
+      }
+
+      unmatchedLocalMessages.push(localMessage);
+    }
+
+    const mergedMessages = persistedUiMessages.map((persistedMessage) => {
+      const localMessage = localByPersistedId.get(persistedMessage.id);
+
+      if (!localMessage) {
+        return persistedMessage;
+      }
+
+      if (localMessage.role === "assistant" && localMessage.status === "streaming" && streamControllersRef.current[localMessage.id]) {
+        return {
+          ...persistedMessage,
+          ...localMessage,
+          dbMessageId: persistedMessage.id,
+          providerName: localMessage.providerName ?? persistedMessage.providerName,
+          modelId: localMessage.modelId ?? persistedMessage.modelId,
+          modelDisplayName: localMessage.modelDisplayName ?? persistedMessage.modelDisplayName,
+          providerResponseModel: persistedMessage.providerResponseModel ?? localMessage.providerResponseModel,
+          attachments: localMessage.attachments.length > 0 ? localMessage.attachments : persistedMessage.attachments,
+        };
+      }
+
+      return {
+        ...localMessage,
+        ...persistedMessage,
+        id: localMessage.id,
+        dbMessageId: persistedMessage.id,
+        runId: localMessage.runId ?? persistedMessage.runId,
+        artifactSaved: localMessage.artifactSaved,
+      };
+    });
+
+    return [...mergedMessages, ...unmatchedLocalMessages];
+  }
+
   async function hydrateConversation(conversationId: string) {
     const token = (hydrateTokensRef.current[conversationId] ?? 0) + 1;
     hydrateTokensRef.current[conversationId] = token;
@@ -974,12 +1435,15 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
     patchConversationState(
       conversationId,
       (state) => {
-        if (isConversationBusyPhase(state.ui.phase)) {
+        if (state.ui.activeReplyIds.length > 0) {
           return {
             ...state,
             conversationId,
             ui: {
-              ...state.ui,
+              ...syncConversationUiState({
+                ...state.ui,
+                messages: mergeHydratedMessages(state.ui.messages, data.messages),
+              }),
               loadToken: token,
             },
           };
@@ -1000,6 +1464,29 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
       { conversationId },
     );
   }
+
+  useEffect(() => {
+    const conversationId = activeConversationState.conversationId;
+
+    if (!conversationId) {
+      return;
+    }
+
+    const needsPolling = activeConversationState.ui.messages.some(
+      (message) => message.status === "streaming" && !streamControllersRef.current[message.id],
+    );
+
+    if (!needsPolling) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void hydrateConversation(conversationId);
+    }, 1500);
+
+    return () => window.clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeConversationKey, activeConversationState.conversationId, activeConversationState.ui.messages]);
 
   function openConversation(conversation: ConversationItem) {
     setActiveConversationKey(conversation.id);
@@ -1048,8 +1535,7 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
   }
 
   async function deleteConversation(id: string) {
-    abortConversationStream(id);
-    clearThinkingTimer(id);
+    await cancelConversationReplies(id);
 
     const response = await fetch(`/api/conversations/${id}`, { method: "DELETE" });
 
@@ -1190,7 +1676,7 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
 
     const state = ensureConversationState(activeConversationKey);
 
-    if (isConversationBusyPhase(state.ui.phase)) {
+    if (isConversationBusyPhase(state.ui.phase) && state.ui.activeReplyIds.length === 0) {
       patchConversationUi(activeConversationKey, (ui) => ({
         ...ui,
         statusMessage: "這個對話正在回覆，請稍後再加附件。",
@@ -1404,16 +1890,26 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
     const currentState = ensureConversationState(conversationKey);
     const messageText = (options.messageOverride ?? currentState.draft.input).trim();
     const useDraftAttachments = options.useDraftAttachments ?? true;
-    const draftAttachments = useDraftAttachments ? currentState.draft.attachments : [];
+    const draftAttachments = useDraftAttachments ? currentState.draft.attachments.map((attachment) => ({ ...attachment })) : [];
     const modelConfigId = currentState.draft.modelConfigId;
     const thinkingMode = currentState.draft.thinkingMode;
     const model = models.find((item) => item.id === modelConfigId);
+    const isAwaitingConversationId =
+      !currentState.conversationId && isDraftConversationKey(conversationKey) && currentState.ui.awaitingConversationId;
 
-    if ((!messageText && draftAttachments.length === 0) || !modelConfigId || isConversationBusyPhase(currentState.ui.phase)) {
+    if ((!messageText && draftAttachments.length === 0) || !modelConfigId) {
       return;
     }
 
-    if (activeStreamingConversationCount() >= maxConcurrentConversationStreams) {
+    if (isAwaitingConversationId) {
+      patchConversationUi(conversationKey, (ui) => ({
+        ...ui,
+        statusMessage: "Please wait for the conversation to start before sending another message.",
+      }));
+      return;
+    }
+
+    if (activeStreamingReplyCount() >= maxConcurrentConversationStreams) {
       patchConversationUi(conversationKey, (ui) => ({
         ...ui,
         statusMessage: `同時最多 ${maxConcurrentConversationStreams} 個對話在回覆，請先等待其中一個完成。`,
@@ -1451,13 +1947,14 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
       ui: {
         ...state.ui,
         messages: [...state.ui.messages, userMessage, assistantMessage],
-        phase: thinkingMode === "extended" ? "requesting" : "streaming",
         statusMessage: "",
+        awaitingConversationId: !state.conversationId,
       },
       draft: options.messageOverride
         ? state.draft
         : {
             ...state.draft,
+            attachments: useDraftAttachments ? [] : state.draft.attachments,
             input: "",
           },
     }));
@@ -1471,7 +1968,7 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
     }
 
     const abortController = new AbortController();
-    streamControllersRef.current[conversationKey] = abortController;
+    streamControllersRef.current[assistantMessage.id] = abortController;
 
     let liveConversationKey = conversationKey;
     let responseConversationId = currentState.conversationId;
@@ -1502,8 +1999,6 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
       const assistantDbMessageId = response.headers.get("x-assistant-message-id");
       const requestedModelId = response.headers.get("x-requested-model-id");
       const requestedProviderName = response.headers.get("x-requested-provider-name");
-      const responseMode = response.headers.get("x-response-mode") === "complete" ? "complete" : "streaming";
-
       if (newConversationId) {
         liveConversationKey = promoteConversationKey(conversationKey, newConversationId);
       }
@@ -1513,7 +2008,7 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
         conversationId: responseConversationId,
         ui: {
           ...state.ui,
-          phase: responseMode === "streaming" ? "streaming" : state.ui.phase,
+          awaitingConversationId: false,
           statusMessage: "",
           messages: state.ui.messages.map((message) =>
             message.id === assistantMessage.id
@@ -1534,10 +2029,6 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
         throw new Error(errorText || "Chat request failed.");
       }
 
-      if (useDraftAttachments && draftAttachments.length > 0) {
-        clearDraftAttachments(liveConversationKey);
-      }
-
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
 
@@ -1554,7 +2045,7 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
           continue;
         }
 
-        clearThinkingTimer(liveConversationKey);
+        clearThinkingTimer(assistantMessage.id);
         patchConversationState(liveConversationKey, (state) => {
           if (!conversationStatesRef.current[liveConversationKey]) {
             return state;
@@ -1564,7 +2055,6 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
             ...state,
             ui: {
               ...state.ui,
-              phase: "streaming",
               statusMessage: "",
               messages: state.ui.messages.map((message) =>
                 message.id === assistantMessage.id
@@ -1580,14 +2070,14 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
         });
       }
 
-      clearThinkingTimer(liveConversationKey);
-      delete streamControllersRef.current[liveConversationKey];
+      clearThinkingTimer(assistantMessage.id);
+      delete streamControllersRef.current[assistantMessage.id];
 
       patchConversationState(liveConversationKey, (state) => ({
         ...state,
         ui: {
           ...state.ui,
-          phase: "completed",
+          awaitingConversationId: false,
           statusMessage: "",
           messages: state.ui.messages.map((message) =>
             message.id === assistantMessage.id
@@ -1607,14 +2097,18 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
         void hydrateConversation(responseConversationId);
       }
     } catch (error) {
-      clearThinkingTimer(liveConversationKey);
-      delete streamControllersRef.current[liveConversationKey];
+      clearThinkingTimer(assistantMessage.id);
+      delete streamControllersRef.current[assistantMessage.id];
 
       if (!conversationStatesRef.current[liveConversationKey]) {
         return;
       }
 
       const rawMessage = error instanceof Error ? error.message : "未知錯誤";
+      if (abortController.signal.aborted) {
+        return;
+      }
+
       const formattedMessage =
         thinkingMode === "extended" && /timed out|timeout/i.test(rawMessage)
           ? "加長思考逾時，請再試一次。"
@@ -1631,7 +2125,7 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
               },
         ui: {
           ...state.ui,
-          phase: "failed",
+          awaitingConversationId: false,
           statusMessage: formattedMessage,
           messages: state.ui.messages.map((message) =>
             message.id === assistantMessage.id
@@ -1650,10 +2144,8 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
         await loadConversations().catch(() => undefined);
       }
     } finally {
-      delete streamControllersRef.current[conversationKey];
-      if (liveConversationKey !== conversationKey) {
-        delete streamControllersRef.current[conversationKey];
-      }
+      delete streamControllersRef.current[assistantMessage.id];
+      clearThinkingTimer(assistantMessage.id);
     }
   }
 
@@ -1730,7 +2222,8 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
   function renderConversationRow(conversation: ConversationItem) {
     const state = conversationStates[conversation.id];
     const rowPhase = state?.ui.phase ?? "idle";
-    const rowPhaseLabel = conversationPhaseLabel(rowPhase);
+    const rowActiveReplyCount = state?.ui.activeReplyIds.length ?? 0;
+    const rowPhaseLabel = formatConversationPhaseLabel(rowPhase, rowActiveReplyCount);
     const isMenuOpen = openConversationMenuId === conversation.id;
 
     return (
@@ -1942,22 +2435,52 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
           <div>
             <strong>{headerTitle}</strong>
             <div className="status-line">
-              {selectedModel ? `${selectedModel.providerName} / ${selectedModel.displayName}` : "尚未配置可用模型"}
+              {modelStatusText}
               <span className="model-chip">response model: {latestProviderResponseModel ?? (activeConversationBusy ? "waiting..." : "-")}</span>
-              {conversationPhaseLabel(activeConversationState.ui.phase) ? (
+              {formatConversationPhaseLabel(activeConversationState.ui.phase, activeReplyCount) ? (
                 <span className={`model-chip phase ${activeConversationState.ui.phase}`}>
-                  {conversationPhaseLabel(activeConversationState.ui.phase)}
+                  {formatConversationPhaseLabel(activeConversationState.ui.phase, activeReplyCount)}
                 </span>
               ) : null}
+              {activeReplyCount > 0 ? (
+                <button className="button secondary" onClick={() => void cancelConversationReplies(activeConversationKey)} type="button">
+                  Stop
+                </button>
+              ) : null}
             </div>
+            {workspaceBootstrap.phase !== "ready" && workspaceBootstrap.phase !== "idle" ? (
+              <div className={`bootstrap-status ${workspaceBootstrap.phase === "failed" ? "failed" : "pending"} workspace-bootstrap-status`}>
+                <span>{workspaceBootstrap.message}</span>
+                <button
+                  className="button secondary"
+                  disabled={workspaceBootstrapBusy}
+                  onClick={() => void bootstrapWorkspace()}
+                  type="button"
+                >
+                  重新載入
+                </button>
+              </div>
+            ) : null}
           </div>
         </header>
 
         <div className="messages">
           {activeConversationState.ui.messages.length === 0 ? (
             <div className="empty-chat">
-              <h2>有什麼可以幫你？</h2>
-              <p>可以貼上截圖、拖入圖片，或加入文件一起問。</p>
+              <h2>{emptyChatTitle}</h2>
+              <p>{emptyChatDescription}</p>
+              {workspaceBootstrap.phase !== "ready" && workspaceBootstrap.phase !== "idle" ? (
+                <div className="empty-chat-actions">
+                  <button
+                    className="button secondary"
+                    disabled={workspaceBootstrapBusy}
+                    onClick={() => void bootstrapWorkspace()}
+                    type="button"
+                  >
+                    重新載入
+                  </button>
+                </div>
+              ) : null}
             </div>
           ) : null}
           {activeConversationState.ui.messages.map((message) => {
@@ -1977,7 +2500,7 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
                     {quickReplies.map((quickReply) => (
                       <button
                         className="quick-reply-chip"
-                        disabled={activeConversationBusy}
+                        disabled={waitingForConversationId || globalReplyLimitReached || !activeConversationState.draft.modelConfigId}
                         key={`${message.id}-${quickReply.source}-${quickReply.value}`}
                         onClick={() =>
                           void sendMessage({
@@ -2041,7 +2564,7 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
                     <button
                       aria-label="移除附件"
                       className="chip-remove"
-                      disabled={activeConversationBusy}
+                      disabled={false}
                       onClick={() => removeAttachment(attachment.localId)}
                       type="button"
                     >
@@ -2064,7 +2587,7 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
               onPaste={onPaste}
               placeholder="有問題，隨時問"
               rows={1}
-              disabled={activeConversationBusy}
+              disabled={false}
             />
 
             <div className="composer-actions">
@@ -2072,7 +2595,7 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
                 <button
                   aria-label="加入附件"
                   className="round-tool-button"
-                  disabled={activeConversationBusy}
+                  disabled={false}
                   onClick={() => {
                     setIsAttachmentMenuOpen((current) => !current);
                     setOpenConversationMenuId(null);
@@ -2132,7 +2655,7 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
                 <button
                   aria-label="智能設定"
                   className="smart-pill"
-                  disabled={activeConversationBusy}
+                  disabled={false}
                   onClick={() => {
                     setIsSmartMenuOpen((current) => !current);
                     setIsAttachmentMenuOpen(false);
@@ -2188,6 +2711,7 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
                           <span>
                             <strong>{option.label}</strong>
                             <small>{option.description}</small>
+                            <small className="smart-option-detail">{option.detail}</small>
                           </span>
                           <span>{option.id === activeConversationState.draft.thinkingMode ? "✓" : ""}</span>
                         </button>
@@ -2196,7 +2720,7 @@ export function ChatWorkspace({ isAdmin }: ChatWorkspaceProps) {
                   </div>
                 ) : null}
               </div>
-              <button aria-label="語音輸入" className="round-tool-button muted" disabled={activeConversationBusy} type="button">
+              <button aria-label="語音輸入" className="round-tool-button muted" disabled={false} type="button">
                 <svg aria-hidden="true" height="17" viewBox="0 0 24 24" width="17">
                   <path
                     d="M12 14c1.66 0 3-1.34 3-3V6c0-1.66-1.34-3-3-3S9 4.34 9 6v5c0 1.66 1.34 3 3 3Z"

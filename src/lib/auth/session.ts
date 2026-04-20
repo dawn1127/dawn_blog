@@ -1,34 +1,29 @@
-import { cookies } from "next/headers";
-import { SignJWT, jwtVerify } from "jose";
+import { cookies, headers } from "next/headers";
 import { getDb } from "@/lib/db";
-import { getEnv } from "@/lib/env";
+import {
+  createSessionToken,
+  sessionCookieName,
+  sessionIdleTimeoutSeconds,
+  verifySessionToken,
+} from "@/lib/auth/session-token";
 
-const cookieName = "network_ai_session";
-export const sessionIdleTimeoutSeconds = 10 * 60;
-export const sessionRefreshThrottleSeconds = 60;
+export { sessionIdleTimeoutSeconds, sessionRefreshThrottleSeconds } from "@/lib/auth/session-token";
 
-type SessionPayload = {
-  userId: string;
-};
-
-function getSessionKey() {
-  return new TextEncoder().encode(getEnv().SESSION_SECRET);
+async function shouldUseSecureSessionCookie() {
+  const headerStore = await headers();
+  return headerStore.get("x-forwarded-proto") === "https";
 }
 
 export async function createSession(userId: string) {
-  return new SignJWT({ userId } satisfies SessionPayload)
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuedAt()
-    .setExpirationTime(`${sessionIdleTimeoutSeconds}s`)
-    .sign(getSessionKey());
+  return createSessionToken(userId);
 }
 
 export async function setSessionCookie(token: string) {
   const cookieStore = await cookies();
-  cookieStore.set(cookieName, token, {
+  cookieStore.set(sessionCookieName, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: await shouldUseSecureSessionCookie(),
     path: "/",
     maxAge: sessionIdleTimeoutSeconds,
   });
@@ -36,40 +31,35 @@ export async function setSessionCookie(token: string) {
 
 export async function clearSessionCookie() {
   const cookieStore = await cookies();
-  cookieStore.delete(cookieName);
+  cookieStore.delete(sessionCookieName);
 }
 
 export async function getCurrentUser() {
   const cookieStore = await cookies();
-  const token = cookieStore.get(cookieName)?.value;
+  const token = cookieStore.get(sessionCookieName)?.value;
 
   if (!token) {
     return null;
   }
 
-  try {
-    const verified = await jwtVerify(token, getSessionKey());
-    const userId = String(verified.payload.userId || "");
+  const session = await verifySessionToken(token);
 
-    if (!userId) {
-      return null;
-    }
-
-    return getDb().user.findFirst({
-      where: {
-        id: userId,
-        enabled: true,
-      },
-      select: {
-        id: true,
-        login: true,
-        displayName: true,
-        role: true,
-      },
-    });
-  } catch {
+  if (!session) {
     return null;
   }
+
+  return getDb().user.findFirst({
+    where: {
+      id: session.userId,
+      enabled: true,
+    },
+    select: {
+      id: true,
+      login: true,
+      displayName: true,
+      role: true,
+    },
+  });
 }
 
 export async function requireUser() {

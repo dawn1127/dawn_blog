@@ -1,11 +1,27 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth/session";
 import { LoginForm } from "@/components/login-form";
+import { getCurrentUser } from "@/lib/auth/session";
+
+function getLoginMessage(params: { reason?: string; error?: string }) {
+  if (params.reason === "timeout") {
+    return "Sign-in timed out. Please sign in again.";
+  }
+
+  if (params.error === "locked") {
+    return "Too many sign-in attempts. Please try again later.";
+  }
+
+  if (params.error === "invalid") {
+    return "Invalid login or password.";
+  }
+
+  return null;
+}
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ reason?: string }>;
+  searchParams: Promise<{ reason?: string; error?: string }>;
 }) {
   const user = await getCurrentUser();
 
@@ -14,16 +30,14 @@ export default async function LoginPage({
   }
 
   const params = await searchParams;
-  const showTimeoutMessage = params.reason === "timeout";
+  const loginMessage = getLoginMessage(params);
 
   return (
     <main className="login-page">
       <section className="login-panel">
         <h1>Dawn Workspace</h1>
-        <p>登录整个网站入口，进入 Network Engineer、Settings 等受保护区域。</p>
-        {showTimeoutMessage ? (
-          <p className="login-timeout-message">登录状态已因超过 10 分钟未活动而过期，请重新登录。</p>
-        ) : null}
+        <p>Sign in to access the protected Dawn Workspace areas, including Network Engineer and Settings.</p>
+        {loginMessage ? <p className="login-timeout-message">{loginMessage}</p> : null}
         <LoginForm />
       </section>
     </main>

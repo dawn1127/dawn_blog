@@ -16,6 +16,12 @@ const envSchema = z.object({
   S3_BUCKET: z.string().default("network-engineer-ai"),
 });
 
+const sessionSecretSchema = z.string().min(16);
+
 export function getEnv() {
   return envSchema.parse(process.env);
+}
+
+export function getSessionSecret() {
+  return sessionSecretSchema.parse(process.env.SESSION_SECRET);
 }

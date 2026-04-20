@@ -1,6 +1,525 @@
-# Log
+﻿# Log
 
 Newest entry first. Keep short-term progress here. Do not store durable rules.
+
+## 2026-04-20 - AI Chat v0.2 Final Wrap-Up
+
+### Done
+
+- Confirmed the latest production chat streaming behavior on `https://blog.dawn1127.com/network-engineer/chat`.
+- Confirmed `Admin-Control-Panel.hta` desktop behavior no longer has popup storm or first-refresh timeout issues.
+- Synced the project handoff docs so `0.2` status no longer points at already-finished verification tasks.
+- Added `.playwright-cli/` to `.gitignore` so local browser-verification artifacts stay out of git.
+
+### Files Changed
+
+- `.gitignore`
+- `README.md`
+- `Log.md`
+
+### Validation
+
+- User confirmed production chat streaming verification is complete.
+- User confirmed `Admin-Control-Panel.hta` verification is complete.
+- `git status --short` should no longer surface `.playwright-cli/` as an untracked artifact after the ignore update.
+
+### Blockers
+
+- No blocker remains for the `AI Chat v0.2` wrap-up.
+
+### Next
+
+- Define the first actual capability to build inside `Network PM Automation`.
+
+## 2026-04-20 - Win11 Repo Encoding Governance
+
+### Done
+
+- Standardized the repo text-encoding policy for Win11 and Windows PowerShell 5.1 compatibility.
+- Added `.editorconfig` and `.gitattributes` so the repo now has explicit text/eol guardrails instead of relying on editor defaults.
+- Normalized all tracked text files to the final policy:
+  - default: UTF-8 without BOM
+  - exceptions: `README.md`, `Log.md`, `Memory.md`, and `*.ps1` use UTF-8 with BOM
+- Updated `Memory.md` so future memory workflows treat the memory handoff files and PowerShell-sensitive files with the new encoding policy.
+
+### Files Changed
+
+- `.editorconfig`
+- `.gitattributes`
+- `README.md`
+- `Log.md`
+- `Memory.md`
+- tracked repo text files normalized for encoding policy compliance
+
+### Validation
+
+- Node scan confirmed the tracked-text-file policy is consistent across the repo:
+  - `README.md`, `Log.md`, `Memory.md`, and `*.ps1` are UTF-8 with BOM
+  - other tracked text files are UTF-8 without BOM
+- Windows PowerShell 5.1 `Get-Content` checks on `README.md`, `Log.md`, and `Memory.md` no longer showed visible mojibake
+- Re-read `.editorconfig` and `.gitattributes` after normalization to confirm the guardrails were saved correctly
+
+### Blockers
+
+- No blocker for the encoding governance itself.
+- The repo still relies on workflow discipline rather than an automated encoding audit, so future drift is less likely but not impossible.
+
+### Next
+
+- Keep the production chat streaming verification as the main product next step.
+- If encoding drift appears again, consider adding a lightweight encoding audit command to the repo verify flow.
+
+## 2026-04-20 - Chat Empty-State Garbled Text Hotfix
+
+### Done
+
+- Confirmed the latest Chat empty-state mojibake was not caused by provider data, bootstrap recovery, or database state.
+- Traced the visible garbled text to three corrupted source strings in `src/components/chat-workspace.tsx`.
+- Applied a minimal hotfix that only restored the affected Chat copy:
+  - `尚未配置可用模型`
+  - `有什麼可以幫你？`
+  - `可以貼上截圖、拖入圖片，或加入文件一起問。`
+
+### Files Changed
+
+- `src/components/chat-workspace.tsx`
+- `Log.md`
+
+### Validation
+
+- UTF-8 direct file read confirmed the three Chat strings are now stored as correct Chinese text.
+- `npm run typecheck`
+- `npm run lint`
+- `npm run build`
+- User manually hard-refreshed `http://localhost:3000/network-engineer/chat` and confirmed the empty-state title, description, and no-model status render correctly.
+
+### Blockers
+
+- No blocker for this hotfix after manual browser verification.
+
+### Next
+
+- Return to the higher-priority pending manual verification of the latest production chat streaming behavior.
+
+## 2026-04-20 - Provider And Chat Bootstrap Self-Heal
+
+### Done
+
+- Added a shared client-side bootstrap fetch helper with `cache: "no-store"`, retryability classification, and retry backoff for startup-time reads.
+- Upgraded `ProviderAdmin` so provider/model initialization now auto-retries on startup failures, shows a visible loading or failed banner, and exposes a manual reload button instead of silently rendering an empty selector.
+- Reworked `ChatWorkspace` bootstrap to retry startup reads and surface a clear recovery state in the header and empty state, so startup-time fetch failures no longer masquerade as an empty configuration.
+
+### Files Changed
+
+- `src/lib/client/bootstrap.ts`
+- `src/components/provider-admin.tsx`
+- `src/components/chat-workspace.tsx`
+- `src/app/globals.css`
+- `Log.md`
+
+### Validation
+
+- `npm run typecheck`
+- `npm run lint`
+- `npm run build`
+- Local API checks confirmed `/api/admin/providers` and `/api/models` returned the expected provider and model data after the bootstrap changes.
+- The temporary `Probe Plan Only` provider was removed after confirming it had no model, conversation, message, or run references.
+
+### Blockers
+
+- No code blocker remains for this bootstrap change.
+- A full browser-level verification of the startup failure-then-auto-recovery path is still pending; current confidence comes from code validation, API checks, and database cleanup.
+
+### Next
+
+- Keep the higher-priority production chat streaming verification as the main next step; if another startup-time empty state appears, manually verify that Settings and Chat recover without a full page refresh.
+
+## 2026-04-20 - Compose Visibility Fix And Codex Markdown Alignment v2
+
+### Done
+
+- Added a chat-only `Inter` font strategy in the root layout and scoped it to assistant chat content, message meta/status/actions, and Markdown prose so the visible chat surface reads closer to Codex without changing the rest of the app shell.
+- Tightened the assistant Markdown surface again by reducing header chrome, lowering syntax color saturation, softening inline code, and making table and blockquote treatments read more like neutral reading furniture than UI cards.
+- Prepared the compose preview flow so the current working tree can be rebuilt into `network-ai-web` and verified from `localhost:3000`, addressing the earlier mismatch where local compose was still serving an older frontend build.
+
+### Files Changed
+
+- `src/app/layout.tsx`
+- `src/components/chat-workspace.tsx`
+- `src/app/globals.css`
+- `Log.md`
+
+### Validation
+
+- `.\scripts\status-local.ps1 -Format Json` confirmed local dev and worker are not running, while compose remains the active preview target on `localhost:3000`
+- `npm run typecheck`
+- `npm run lint`
+- `npm run build`
+- `.\scripts\start-compose.ps1`
+- `docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"` confirmed `network-ai-web` and `network-ai-worker` were recreated and serving the new build from `localhost:3000`
+- Browser verification on `http://localhost:3000/network-engineer/chat` after login:
+  - desktop screenshot confirmed the compose-served chat now shows the thinner code header, lower-contrast `Copy` button, narrower prose, and softer blockquote/table treatment
+  - mobile screenshot confirmed the same Markdown fixture remains readable without obvious overflow or card-like chrome
+
+### Blockers
+
+- No functional blocker after the compose rebuild.
+- Exact pixel-for-pixel parity with Codex is still constrained by the existing app shell, font fallback for CJK glyphs, and the fact that this repo does not have Codex's private design tokens.
+
+### Next
+
+- If another parity pass is needed, the next highest-yield refinements are the surrounding chat shell density and a slightly tighter sidebar/list rhythm, not the Markdown renderer itself.
+
+## 2026-04-20 - Markdown Styling Refinement Toward Codex
+
+### Done
+
+- Tightened the assistant Markdown typography toward a more Codex-like reading feel by reducing decorative emphasis, darkening body copy, and dialing heading scale back from the previous richer pass.
+- Simplified code block chrome so the container, header, and copy button read as neutral product UI instead of a designed card, while keeping soft syntax highlighting and stable `Copy / Copied / Retry` states.
+- Reduced saturation across syntax colors, links, blockquote treatment, inline code, and table framing so the whole Markdown surface feels more restrained and content-first.
+
+### Files Changed
+
+- `src/components/chat-workspace.tsx`
+- `src/app/globals.css`
+- `Log.md`
+
+### Validation
+
+- `npm run typecheck`
+- `npm run lint`
+- Browser re-check on `http://localhost:3000/network-engineer/chat` with the existing Markdown fixture conversation:
+  - desktop screenshot confirmed closer Codex-like hierarchy for heading, body copy, nested list, inline code, and links
+  - desktop screenshot confirmed calmer code block treatment with reduced visual chrome
+
+### Blockers
+
+- No functional blocker.
+- Exact pixel-for-pixel parity with Codex is still limited by font stack, shell layout, and the fact that this app is not using Codex's private design system, but the Markdown layer is now materially closer.
+
+### Next
+
+- If another pass is needed, compare against a few more real Codex replies and decide whether to further shrink heading scale or soften syntax colors.
+
+## 2026-04-20 - Hybrid Markdown Upgrade v2
+
+### Done
+
+- Upgraded assistant Markdown rendering to a calmer reading layout with prose-width constraints for headings, paragraphs, lists, and blockquotes, while letting code blocks, tables, and rules use the full assistant message width.
+- Reworked code blocks into a product-style component with `prism-react-renderer`, soft light syntax highlighting, stable `Copy / Copied / Retry` button states, `TEXT` fallback labeling, and horizontal scroll instead of line wrapping.
+- Refined inline code, links, tables, blockquotes, and assistant message spacing so long Chinese replies read more like a premium AI product and less like default Markdown output.
+- Kept the existing `react-markdown + remark-gfm` pipeline and did not change any API, schema, or message wire format.
+
+### Files Changed
+
+- `package.json`
+- `package-lock.json`
+- `src/components/chat-workspace.tsx`
+- `src/app/globals.css`
+- `Log.md`
+
+### Validation
+
+- `npm run typecheck`
+- `npm run lint`
+- `npm run build`
+- Browser verification on `http://localhost:3000/network-engineer/chat` after login:
+  - rendered a Markdown-heavy assistant reply with heading, long Chinese paragraph, nested list, inline code, code blocks, table, blockquote, and `hr`
+  - desktop viewport checks confirmed improved prose rhythm, code-block chrome, table density, and editorial blockquote styling
+  - mobile viewport checks confirmed no obvious overflow in code block, table, blockquote, summary paragraph, or composer area
+
+### Blockers
+
+- No functional blocker from this Markdown upgrade pass.
+- Visual tuning can continue later if a stronger product signature is desired, but the current pass already clears the “default Markdown” look.
+
+### Next
+
+- Compare this local Markdown rendering against the external production chat after the next deploy.
+- Use one or two real long-form assistant answers to judge whether syntax colors or table density need another small polish pass.
+
+## 2026-04-19 - Chat Streaming Handoff Wrap
+
+### Done
+
+- Implemented process-local background continuation for chat replies after browser leave/switch, with partial assistant content persisted during streaming.
+- Added explicit run cancel support through `POST /api/chat/runs/:runId/cancel` and wired the conversation-level Stop action to cancel active run ids.
+- Kept extended-thinking requests on streaming when the selected model supports streaming, while documenting the user-facing behavior honestly in the Smart menu.
+- Updated the Smart menu thinking-strength copy so `標準` explains gradual output and `加長思考` explains the wait-then-final-answer behavior.
+- Rebuilt compose production so `blog.dawn1127.com` is using the current app image.
+
+### Files Changed
+
+- `src/app/api/chat/route.ts`
+- `src/app/api/chat/runs/[runId]/cancel/route.ts`
+- `src/app/api/conversations/[conversationId]/messages/route.ts`
+- `src/components/chat-workspace.tsx`
+- `src/app/globals.css`
+- `src/lib/chat/active-runs.ts`
+- `Log.md`
+
+### Validation
+
+- `npm run typecheck`
+- `npm run lint`
+- `npm run build`
+- `.\scripts\start-compose.ps1`
+- Smoke checks:
+  - `http://localhost:3000/login` returned `200`
+  - `https://blog.dawn1127.com/login` returned `200`
+  - compose rebuilt and restarted `network-ai-web` and `network-ai-worker`
+
+### Blockers
+
+- Real browser verification is still needed for the full chat behavior:
+  - `加長思考` should show the expected wait-then-output behavior.
+  - A/B concurrent replies should keep partial content after leaving and returning.
+  - Stop should cancel all active replies in the selected conversation and persist the stopped state.
+- Background continuation is still process-local only; it does not survive web container restart, deploy rebuild, or process crash.
+
+### Next
+
+- On `https://blog.dawn1127.com/network-engineer/chat`, manually verify:
+  - send one `加長思考` prompt and confirm the Smart menu explanation matches the observed output timing
+  - send A, then send B while A is streaming, leave the conversation, return, and confirm partial content is retained and polling resumes
+  - press Stop with multiple active replies and confirm the stopped state persists after reload
+- If manual chat verification passes, update the latest open blocker in `Log.md`; if it fails, capture Network requests for `/api/chat`, `/api/conversations/:id/messages`, and `/api/chat/runs/:runId/cancel`.
+
+## 2026-04-19 - Extended Streaming And Background Chat Resume
+
+### Done
+
+- Changed extended-thinking chat requests to use streaming whenever the selected model supports streaming.
+- Decoupled browser response cancellation from provider generation so leaving or switching the page no longer aborts the server-side run.
+- Added throttled partial assistant-message persistence during streaming, with final flushes on completion and failure.
+- Added an in-memory active run registry plus `POST /api/chat/runs/:runId/cancel` for explicit Stop/cancel behavior.
+- Updated chat hydration to include run ids and merge persisted streaming content without overwriting locally live replies.
+- Added polling for persisted streaming replies that no longer have a local live reader, so returning to a conversation can pick up DB partial content.
+
+### Files Changed
+
+- `src/app/api/chat/route.ts`
+- `src/app/api/chat/runs/[runId]/cancel/route.ts`
+- `src/app/api/conversations/[conversationId]/messages/route.ts`
+- `src/components/chat-workspace.tsx`
+- `src/lib/chat/active-runs.ts`
+- `Log.md`
+
+### Validation
+
+- `npm run typecheck`
+- `npm run lint`
+- `npm run build`
+
+### Blockers
+
+- Background continuation is process-local only. It does not survive web container restart, deploy rebuild, or process crash.
+- Browser-level verification on mobile/production is still pending after rebuild.
+
+### Next
+
+- Rebuild the running compose service and verify:
+  - extended-thinking replies stream token by token
+  - A/B concurrent replies keep partial content after leaving and returning
+  - Stop cancels all active replies in the selected conversation and persists the stopped state
+
+## 2026-04-19 - Concurrent Replies In One Conversation
+
+### Done
+
+- Refactored the chat workspace from conversation-level busy locking to reply-level in-flight tracking.
+- Allowed the same conversation to accept new prompts while older assistant replies are still streaming.
+- Added per-reply controller/timer handling so multiple assistant bubbles can stream independently without overwriting each other.
+- Kept a first-message safety lock for brand-new draft conversations until the real conversation id is returned.
+- Unlocked the composer, quick replies, attachment controls, and model/thinking selectors during active streaming.
+- Added a conversation-level `Stop` control that aborts all in-flight replies for the active conversation.
+- Updated hydrate behavior to merge persisted messages without overwriting local in-flight assistant bubbles.
+
+### Files Changed
+
+- `src/components/chat-workspace.tsx`
+- `Log.md`
+
+### Validation
+
+- `npm run typecheck`
+- `npm run lint`
+- `npm run build`
+
+### Blockers
+
+- Browser-level runtime verification for multi-reply streaming is still pending after the state-model refactor.
+
+### Next
+
+- Rebuild the running app instance and verify:
+  - send A, then send B before A completes
+  - both assistant bubbles stream independently
+  - `Stop` aborts all active replies in the same conversation
+  - attachments from A are not carried into B
+
+## 2026-04-19 - Native Form Login For Mobile Stability
+
+### Done
+
+- Replaced the login page fetch-based submission flow with a native HTML form post to `/api/auth/login`.
+- Updated `/api/auth/login` to support both JSON requests and form submissions without changing the existing JSON response contract.
+- Added `303 See Other` redirect handling for form login success and failure so the browser, not client-side JavaScript, owns the post-login navigation.
+- Switched form login redirects to relative `Location` headers so reverse-proxied external logins do not get redirected to `localhost`.
+- Simplified login failure feedback into server-rendered `/login` messages for timeout, invalid credentials, and lockout cases.
+- Cleaned up the login form labels/button text after replacing the previous client-side implementation.
+
+### Files Changed
+
+- `src/components/login-form.tsx`
+- `src/app/api/auth/login/route.ts`
+- `src/app/login/page.tsx`
+- `Log.md`
+
+### Validation
+
+- `npm run typecheck`
+- `npm run lint`
+- `npm run build`
+- Local form login smoke:
+  - `POST http://localhost:3000/api/auth/login` with form data returned `303 -> /`
+  - invalid credentials returned `303 -> /login?error=invalid`
+  - repeated failures returned `303 -> /login?error=locked`
+- JSON login contract smoke:
+  - success returned `200 {"ok":true}`
+  - invalid credentials returned `401 {"ok":false,"code":"invalid_credentials",...}`
+  - lockout returned `429 {"ok":false,"code":"login_locked",...,"retryAfterSeconds":60}`
+  - existing session cookie behavior remained intact
+- Login page rendering smoke:
+  - `/login?error=invalid` rendered the invalid-credentials message
+  - `/login?error=locked` rendered the lockout message
+  - authenticated access to `/login` redirected back to `/`
+- External production smoke through Nginx Proxy Manager:
+  - `POST https://blog.dawn1127.com/api/auth/login` with form data returned `303 -> /`
+  - authenticated requests to `https://blog.dawn1127.com/` and `/settings` both returned `200`
+
+### Blockers
+
+- Real mobile Safari and Chrome verification is still required.
+
+### Next
+
+- Re-test the login flow on a real phone against `https://blog.dawn1127.com/login`.
+- If mobile still fails, capture the form `POST /api/auth/login` and the first follow-up `GET /` request from the device for comparison against the passing desktop/external smokes.
+
+## 2026-04-19 - Mobile Login Full-Page Redirect
+
+### Done
+
+- Changed login success handling in `src/components/login-form.tsx` from App Router client navigation to `window.location.replace("/")`.
+- Kept the existing login API call, lockout handling, validation messages, and submit-button double-submit protection unchanged.
+- Chose full-page navigation intentionally so mobile Safari and Chrome do not depend on the first post-login SPA navigation seeing the fresh session cookie immediately.
+
+### Files Changed
+
+- `src/components/login-form.tsx`
+- `Log.md`
+
+### Validation
+
+- `npm run typecheck`
+- `npm run lint`
+- Local login API smoke:
+  - `POST http://localhost:3000/api/auth/login` returned `200`
+  - `/api/auth/session` returned `authenticated: true`
+  - `network_ai_session` cookie was present after login
+
+### Blockers
+
+- Real mobile browser verification is still required for Safari and Chrome.
+
+### Next
+
+- Run `npm run typecheck`, `npm run lint`, and a login smoke test.
+- On mobile Safari and Chrome, confirm successful login now lands on `/` without the intermediate "This page couldn't load" screen.
+
+## 2026-04-19 - Global Login Gate And Compose Production Mode
+
+### Done
+
+- Added `src/proxy.ts` so every UI page except `/login` and required static/API routes now requires a valid session cookie before rendering.
+- Split JWT token creation/verification into a lightweight auth helper so the new proxy gate can validate sessions without pulling full DB/session dependencies into the request boundary.
+- Kept existing page/API auth checks in place as the second authorization layer.
+- Changed `.\scripts\start-compose.ps1` to start compose in rebuild mode so production/external startup always picks up the current app image.
+- Updated README and admin runtime notes to make the local-vs-compose split explicit: local mode is for development, compose mode is for formal external/production use through Nginx Proxy Manager.
+
+### Files Changed
+
+- `Dockerfile`
+- `src/lib/env.ts`
+- `src/lib/auth/session-token.ts`
+- `src/lib/auth/session.ts`
+- `src/proxy.ts`
+- `scripts/start-compose.ps1`
+- `README.md`
+- `ADMIN-RUNBOOK.md`
+- `Log.md`
+
+### Validation
+
+- `npm run typecheck`
+- `npm run lint`
+- `npm run build`
+- Unauthenticated HTTP probes:
+  - `http://localhost:3000/` -> `307 /login`
+  - `http://localhost:3000/blog` -> `307 /login`
+  - `http://localhost:3000/future` -> `307 /login`
+  - `http://localhost:3000/settings` -> `307 /login`
+  - `http://localhost:3000/login` -> `200`
+- Compose production validation:
+  - `.\scripts\stop-local.ps1`
+  - `.\scripts\start-compose.ps1`
+  - `docker ps` confirmed `network-ai-web`, `network-ai-worker`, `network-ai-postgres`, `network-ai-redis`, and `network-ai-minio` running
+  - `POST /api/auth/login` on `http://localhost:3000` returned `200`, set `network_ai_session`, and `/api/auth/session` returned `authenticated: true`
+  - Authenticated `http://localhost:3000/`, `/settings`, and `/network-engineer/chat` all returned `200`
+  - `POST /api/auth/login` on `http://192.168.1.20:3000` returned a valid session and authenticated `/` returned `200`
+  - External HTTP check confirmed `https://blog.dawn1127.com/` redirects to `/login` and `https://blog.dawn1127.com/login` renders the login page
+
+### Blockers
+
+- External Nginx Proxy Manager verification still requires a manual browser pass on `https://blog.dawn1127.com`.
+- Secondary open item remains: `Admin-Control-Panel.hta` desktop verification for no popup storm and no first-refresh timeout.
+
+### Next
+
+- In a real browser session, sign in through `https://blog.dawn1127.com/login` and verify authenticated `/`, `/settings`, and `/network-engineer/chat`.
+
+## 2026-04-19 - GitHub Initial Push And Session Wrap
+
+### Done
+
+- Initialized the local git repository on `main`.
+- Created the first local commit: `a643b84` with message `release: AI Chat v0.2 milestone and Network PM Automation rename`.
+- Added GitHub remote `origin` at `https://github.com/dawn1127/dawn_blog.git`.
+- Pushed `main` to GitHub and set local `main` to track `origin/main`.
+- Confirmed the working tree was clean after the push.
+- Confirmed the GitHub repo slug is `dawn_blog`; the UI display name remains `Dawn Blog`, not `Dawn_blog`.
+
+### Files Changed
+
+- `Log.md`
+- `Memory.md`
+
+### Validation
+
+- `npm run verify` passed after the Dawn Blog label alignment.
+- `git status --ignored` confirmed local runtime artifacts and secrets stayed ignored before the first commit.
+- `git status` after push showed `main` up to date with `origin/main` and a clean working tree.
+
+### Blockers
+
+- No blocker for the initial GitHub push.
+- Secondary open item only: `Admin-Control-Panel.hta` desktop verification for no popup storm and no first-refresh timeout.
+
+### Next
+
+- Next first action: define the first actual capability for `Network PM Automation`.
+- Optional housekeeping: commit and push this memory wrap update after review.
 
 ## 2026-04-19 - Dawn Blog Label Alignment
 

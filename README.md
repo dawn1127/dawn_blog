@@ -55,7 +55,7 @@ npm run verify
 .\scripts\restart-local.ps1
 .\scripts\stop-local.ps1
 
-# backup full compose mode
+# formal external / production compose mode
 .\scripts\start-compose.ps1
 .\scripts\stop-compose.ps1
 
@@ -72,8 +72,8 @@ npm run build
 
 - App URL: `http://localhost:3000`.
 - Current app version: `0.2`.
-- Public home: `/`.
-- Dawn Blog: `/blog`.
+- Authenticated home: `/`.
+- Authenticated Dawn Blog: `/blog`.
 - Login page: `/login` is the shared site-wide sign-in entry.
 - Network Engineer home: `/network-engineer`.
 - Chat page: `/network-engineer/chat` for the current general-purpose AI Chat workspace.
@@ -81,6 +81,7 @@ npm run build
 - Legacy compatibility route: `/network-engineer/excel-automation` redirects to `Network PM Automation` after auth.
 - Settings page: `/settings` for Artifacts, Provider & Models, System Health, and document mode.
 - Auth sessions use a 10-minute sliding JWT/cookie timeout. Active UI pages refresh through `/api/auth/refresh`; idle timeout redirects to `/login?reason=timeout`.
+- Session cookies are marked `Secure` only when the request arrives through forwarded HTTPS (`x-forwarded-proto=https`), so external HTTPS and direct local/internal HTTP validation can both work.
 - Direct sign-in from `/login` now lands on `/`; this round does not add `returnTo` / `next` redirect recovery.
 - Authenticated users have a top-nav `登出` action.
 - Global navigation: Home, Dawn Blog, Network Engineer, and future development are shown from every UI page.
@@ -93,7 +94,10 @@ npm run build
   - `.\scripts\status-local.ps1`
   - `.\scripts\restart-local.ps1`
   - `.\scripts\stop-local.ps1`
-- Backup mode only: `.\scripts\start-compose.ps1` and `.\scripts\stop-compose.ps1`.
+- Local mode (`.\scripts\start-local.ps1`) is for development only and runs `npm run dev` plus the worker.
+- Compose mode (`.\scripts\start-compose.ps1`) is the formal external/production path; it rebuilds the production image and starts the Docker `web` and `worker` services.
+- Before switching the public domain to compose mode, stop local mode first.
+- External HTTPS traffic should terminate at Nginx Proxy Manager and forward to `http://192.168.1.20:3000`.
 - Bootstrap admin login: `admin`.
 - Bootstrap admin password: stored in local `.env` as `BOOTSTRAP_ADMIN_PASSWORD`; never write it into docs or logs.
 - Docker Compose services: `network-ai-postgres`, `network-ai-redis`, `network-ai-minio`.
@@ -108,7 +112,7 @@ For a new chat or fresh session:
 1. Read `README.md`, latest entries in `Log.md`, then `Memory.md`.
 2. Prefer `.\scripts\status-local.ps1` to see whether the local runtime is already up.
 3. If local mode is stopped, run `.\scripts\start-local.ps1`.
-4. If you need full-container fallback instead, stop local mode first, then run `.\scripts\start-compose.ps1`.
+4. If you need the formal external/production path, stop local mode first, then run `.\scripts\start-compose.ps1`.
 5. Use `.\scripts\restart-local.ps1` when PID files drift or the local runtime needs a clean reset.
 6. Confirm schema with `npx prisma migrate status`.
 7. Use `/settings?tab=system` to check DB, Redis, MinIO, env, provider/model counts, and file queue state.
@@ -164,19 +168,20 @@ If changing provider keys, use `/settings?tab=providers`. The UI masks keys and 
 - Do not validate model identity by asking the model what it is; use requested model metadata plus the provider response `model` field shown in Chat UI and saved message metadata.
 - Provider/model admin hard delete is allowed even after historical use; related conversation/message/run content remains, but provider/model metadata is set to null.
 - Auth remains stateless JWT cookie based for now; there is no DB-backed session table or remember-me mode.
+- All UI pages except `/login` now require a valid session cookie at the Next.js `proxy.ts` boundary; page/API auth checks remain in place as the second layer.
 - Chat history image attachments open in an in-page modal and download through `/api/files/{fileId}/download`; non-image attachments download directly from the attachment card.
+- Repo text encoding policy now defaults to UTF-8 without BOM; only `README.md`, `Log.md`, `Memory.md`, and `*.ps1` stay on UTF-8 with BOM for Win11 / Windows PowerShell 5.1 compatibility.
 
 ## Status
 
-- Done: pre-1.0 specs, Next.js app skeleton, Prisma data model, provider adapters, auth routes, Provider Admin UI/API, persistent conversation list/messages, chat route/UI, OpenAI native file input, image upload/paste/drag support, message attachment history, artifact API/UI, run traceability, System Health page/API, first-run scripts, Docker Compose foundation, live Docker startup, GUI provider key rotation, official OpenAI `gpt-5.4` provider/model setup, provider response model capture, OpenAI-style Chat UI, assistant Markdown rendering, smart composer model/thinking selector, single-level Projects, unified Settings page, model editing with native file capability, public top-level site structure, Network Engineer subroutes, shared global navigation/breadcrumb frame, 10-minute sliding session timeout with active logout, Chat attachment image modal/direct file download interactions, and the Win11 `Admin-Control-Panel.hta` local operations console with structured status JSON.
+- Done: pre-1.0 specs, Next.js app skeleton, Prisma data model, provider adapters, auth routes, Provider Admin UI/API, persistent conversation list/messages, chat route/UI, OpenAI native file input, image upload/paste/drag support, message attachment history, artifact API/UI, run traceability, System Health page/API, first-run scripts, Docker Compose foundation, live Docker startup, GUI provider key rotation, official OpenAI `gpt-5.4` provider/model setup, provider response model capture, OpenAI-style Chat UI, assistant Markdown rendering, smart composer model/thinking selector, single-level Projects, unified Settings page, model editing with native file capability, public top-level site structure, Network Engineer subroutes, shared global navigation/breadcrumb frame, 10-minute sliding session timeout with active logout, Chat attachment image modal/direct file download interactions, process-local chat background continuation with partial content persistence, conversation-level Stop/run cancel support, Smart menu thinking-strength behavior copy, and the Win11 `Admin-Control-Panel.hta` local operations console with structured status JSON.
 - Done: `AI Chat v0.2` milestone is accepted from the current manual validation pass.
-- Next first action: prepare the first actual capability inside `Network PM Automation`.
-- Secondary open item: reopen `Admin-Control-Panel.hta` and verify two things only: no popup storm and no first-refresh timeout. This HTA check is not part of the `0.2` blocker set.
+- Done: production chat streaming was manually verified on `https://blog.dawn1127.com/network-engineer/chat`, and `Admin-Control-Panel.hta` desktop verification confirmed no popup storm and no first-refresh timeout.
+- Next first action: define the first actual capability to build inside `Network PM Automation`.
 
 ## Next Development Targets
 
 - Test official OpenAI `gpt-5.4` chat through the app with normal, streaming, provider-error, response model display, image input, native file input, and Enter-to-send cases.
-- Test `智能 -> 延伸` through OpenAI Responses and confirm the provider accepts the mapped reasoning effort.
 - Upload a supported document through the Chat composer `+` menu and send with a model that has `supportsNativeFiles` enabled.
 - Paste a Windows screenshot or drag an image into Chat, confirm it becomes an image chip, then send with a model that has `supportsImages` enabled.
 - Ask file-grounded questions about IP, VLAN, hostname, duplicate values, and row references.
@@ -184,11 +189,9 @@ If changing provider keys, use `/settings?tab=providers`. The UI masks keys and 
 - Add better model validation output in Admin UI if provider errors need clearer diagnosis.
 - Define the first actual capability to build inside `Network PM Automation`.
 - Convert the new tool from placeholder state into its first usable workflow.
-- Reopen `Admin-Control-Panel.hta` and verify desktop launch behavior for no popup storm and no first-refresh timeout.
 
 ## Notes
 
 - Do not commit `.env` or real provider keys.
 - Docker Desktop + WSL2 is available locally and compose services have been validated.
 - `xlsx` was avoided because npm audit reports high severity vulnerabilities with no fix. Use ExcelJS and csv-parse instead.
-

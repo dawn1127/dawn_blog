@@ -11,6 +11,7 @@ import { getStorageClient } from "@/lib/storage";
 import { streamToBuffer } from "@/lib/storage/read-object";
 import { getDocumentMode } from "@/lib/settings";
 import { isNativeFileKind } from "@/lib/file-types";
+import { isActiveChatRunCanceled, registerActiveChatRun, unregisterActiveChatRun } from "@/lib/chat/active-runs";
 
 const chatSchema = z.object({
   conversationId: z.string().optional().nullable(),
@@ -44,6 +45,15 @@ function toPublicChatErrorMessage(message: string) {
   return /controller is already closed|invalid state|readablestream/i.test(message)
     ? publicStreamInterruptedMessage
     : message;
+}
+
+const canceledReplyMessage = "已停止回覆";
+const partialFlushIntervalMs = 500;
+const partialFlushCharacterDelta = 300;
+
+function appendCanceledMessage(content: string) {
+  const trimmed = content.trim();
+  return trimmed ? `${trimmed}\n\n${canceledReplyMessage}` : canceledReplyMessage;
 }
 
 async function fileToImagePart(file: {
@@ -301,7 +311,7 @@ export async function POST(request: Request) {
 
   const adapter = getProviderAdapter(model.provider.apiStyle);
   const apiKey = decryptSecret(model.provider.apiKeyEncrypted);
-  const shouldStream = model.supportsStreaming && body.reasoningEffort !== "extended";
+  const shouldStream = model.supportsStreaming;
   const timeoutMs = body.reasoningEffort === "extended" ? 180000 : 60000;
   const assistantMessage = await db.message.create({
     data: {
@@ -314,6 +324,11 @@ export async function POST(request: Request) {
     },
   });
 
+  await db.run.update({
+    where: { id: run.id },
+    data: { messageId: assistantMessage.id },
+  });
+
   const headers = new Headers({
     "Content-Type": "text/plain; charset=utf-8",
     "Cache-Control": "no-cache",
@@ -324,6 +339,10 @@ export async function POST(request: Request) {
     "x-requested-provider-name": model.provider.name,
     "x-response-mode": shouldStream ? "streaming" : "complete",
   });
+  const providerAbortController = new AbortController();
+  let clientAborted = request.signal.aborted;
+
+  registerActiveChatRun(run.id, providerAbortController);
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -331,7 +350,6 @@ export async function POST(request: Request) {
       let fullText = "";
       let providerResponseModel: string | undefined;
       let streamClosed = false;
-      let clientAborted = request.signal.aborted;
       const abortListener = () => {
         clientAborted = true;
         console.warn("[chat-stream] request aborted", {
@@ -419,6 +437,33 @@ export async function POST(request: Request) {
         }
       };
 
+      let lastFlushedText = "";
+      let lastFlushAt = Date.now();
+      const flushPartialContent = async (force = false) => {
+        if (fullText === lastFlushedText) {
+          return;
+        }
+
+        const shouldFlush =
+          force ||
+          Date.now() - lastFlushAt >= partialFlushIntervalMs ||
+          fullText.length - lastFlushedText.length >= partialFlushCharacterDelta;
+
+        if (!shouldFlush) {
+          return;
+        }
+
+        await db.message.update({
+          where: { id: assistantMessage.id },
+          data: {
+            content: fullText,
+            providerResponseModel,
+          },
+        });
+        lastFlushedText = fullText;
+        lastFlushAt = Date.now();
+      };
+
       try {
         if (shouldStream) {
           const result = await adapter.chatStream({
@@ -427,11 +472,12 @@ export async function POST(request: Request) {
             modelId: model.modelId,
             messages,
             reasoningEffort: body.reasoningEffort,
-            signal: request.signal,
+            signal: providerAbortController.signal,
             timeoutMs,
             onToken: async (token) => {
               fullText += token;
               safeEnqueue(token);
+              await flushPartialContent();
             },
           });
           providerResponseModel = result.responseModel;
@@ -442,7 +488,7 @@ export async function POST(request: Request) {
             modelId: model.modelId,
             messages,
             reasoningEffort: body.reasoningEffort,
-            signal: request.signal,
+            signal: providerAbortController.signal,
             timeoutMs,
           });
           fullText = result.content;
@@ -450,6 +496,7 @@ export async function POST(request: Request) {
           safeEnqueue(fullText);
         }
 
+        await flushPartialContent(true);
         await db.message.update({
           where: { id: assistantMessage.id },
           data: {
@@ -470,21 +517,22 @@ export async function POST(request: Request) {
         const message = error instanceof Error ? error.message : "Unknown chat provider error";
         const publicMessage = toPublicChatErrorMessage(message);
 
-        if (isAbortLikeError(error) && request.signal.aborted) {
+        if (isAbortLikeError(error) && isActiveChatRunCanceled(run.id)) {
+          const canceledContent = appendCanceledMessage(fullText);
           await db.message.update({
             where: { id: assistantMessage.id },
             data: {
-              content: fullText || publicStreamInterruptedMessage,
-              status: fullText ? "completed" : "failed",
+              content: canceledContent,
+              status: "failed",
               providerResponseModel,
-              ...(fullText ? {} : { errorMessage: publicStreamInterruptedMessage }),
+              errorMessage: "Canceled by user",
             },
           });
           await db.run.update({
             where: { id: run.id },
             data: {
-              status: fullText ? "completed" : "failed",
-              ...(fullText ? {} : { errorMessage: "Client disconnected" }),
+              status: "failed",
+              errorMessage: "Canceled by user",
               completedAt: new Date(),
             },
           });
@@ -492,6 +540,7 @@ export async function POST(request: Request) {
           return;
         }
 
+        await flushPartialContent(true);
         await db.message.update({
           where: { id: assistantMessage.id },
           data: {
@@ -518,7 +567,11 @@ export async function POST(request: Request) {
         safeError(new Error(publicMessage));
       } finally {
         request.signal.removeEventListener("abort", abortListener);
+        unregisterActiveChatRun(run.id);
       }
+    },
+    cancel() {
+      clientAborted = true;
     },
   });
 

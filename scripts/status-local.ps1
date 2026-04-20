@@ -1,4 +1,4 @@
-param(
+﻿param(
   [ValidateSet("Text", "Json")]
   [string]$Format = "Text"
 )

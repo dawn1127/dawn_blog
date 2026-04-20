@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 $apiKeySecure = Read-Host "Paste AI Coding 2233 API key" -AsSecureString
 $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($apiKeySecure)
