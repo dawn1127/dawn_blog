@@ -10,18 +10,22 @@ Newest entry first. Keep short-term progress here. Do not store durable rules.
 - Confirmed `Admin-Control-Panel.hta` desktop behavior no longer has popup storm or first-refresh timeout issues.
 - Synced the project handoff docs so `0.2` status no longer points at already-finished verification tasks.
 - Added `.playwright-cli/` to `.gitignore` so local browser-verification artifacts stay out of git.
+- Created and pushed commit `8b2b8f2` with message `release: finalize AI Chat v0.2 wrap-up`, so `origin/main` now reflects the latest `0.2` state.
 
 ### Files Changed
 
 - `.gitignore`
 - `README.md`
 - `Log.md`
+- `Memory.md`
 
 ### Validation
 
 - User confirmed production chat streaming verification is complete.
 - User confirmed `Admin-Control-Panel.hta` verification is complete.
-- `git status --short` should no longer surface `.playwright-cli/` as an untracked artifact after the ignore update.
+- `git status --short --branch` confirmed local `main` is aligned with `origin/main` after push.
+- `git log --oneline --decorate -n 3` showed `8b2b8f2` at `HEAD -> main, origin/main`.
+- `.playwright-cli/` is now ignored by git after the `.gitignore` update.
 
 ### Blockers
 

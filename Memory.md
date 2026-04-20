@@ -29,7 +29,7 @@
 - `*.ps1` 採 UTF-8 with BOM 是為了 Win11 / Windows PowerShell 5.1 的中文可讀性與相容性，不是因為 PowerShell 語法要求 BOM。
 - 在 Windows PowerShell 5.1 下，不用預設 `Get-Content` / `Set-Content` 直接處理 memory 檔與中文敏感檔；讀取優先用 Node 明確以 UTF-8 讀，寫入優先用 `apply_patch` 或可明確控制 UTF-8/BOM 的方式。
 - `Memory.md` 變得冗長或混亂時，執行 `Memory prune`，移除過期、重複、模糊或一次性內容。
-- GitHub remote 使用 `origin -> https://github.com/dawn1127/dawn_blog.git`；一般上傳流程是 `git status`、`git add .`、`git status`、`git commit -m "..."`、`git push`。
+- GitHub remote 使用 `origin -> https://github.com/dawn1127/dawn_blog.git`；預設上傳流程優先用明確 staged：`git status`、`git add <明確檔案>`、`git add -u`、`git status`、必要時 `git diff --staged --stat` / `git diff --staged`、`git commit -m "..."`、`git push`。
 - 驗證 AI 實際使用的模型時，看 app 記錄/requested model metadata，不依賴模型自我介紹。
 - 編輯含中文的 `.ts`、`.tsx`、`.md` 時，避免用 PowerShell 管線重寫檔案；優先用 `apply_patch`，必要時用 Node 明確以 UTF-8 讀寫。
 
