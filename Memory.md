@@ -29,9 +29,23 @@
 - `*.ps1` 採 UTF-8 with BOM 是為了 Win11 / Windows PowerShell 5.1 的中文可讀性與相容性，不是因為 PowerShell 語法要求 BOM。
 - 在 Windows PowerShell 5.1 下，不用預設 `Get-Content` / `Set-Content` 直接處理 memory 檔與中文敏感檔；讀取優先用 Node 明確以 UTF-8 讀，寫入優先用 `apply_patch` 或可明確控制 UTF-8/BOM 的方式。
 - `Memory.md` 變得冗長或混亂時，執行 `Memory prune`，移除過期、重複、模糊或一次性內容。
+- `Log.md` 由 `Memory wrap` 自動 rotate，常駐保留最近 3 個 entry。每次 wrap 寫完新 entry 後若總數 > 4 自動砍到 3。透過 `CLAUDE.md` 的 `@Log.md` import 在每次新 session 啟動時自動載入，實現「新會話直接了解最近進度」。需查更舊歷史用 `git show pre-log-rotate-2026-04-25:Log.md` 或 `git log -p Log.md`，不在 working file 保留長期歷史。
+- 完成實質工作（代碼變更、配置變更、新增文件、修復事故、驗證通過）後，Claude 應主動建議使用者執行 `Memory wrap`，不必等使用者開口；建議時用一行說明本次會被記錄的主要成果。瑣碎工作（純讀檔、回答問題）或本 session 已 wrap 過則略過。
 - GitHub remote 使用 `origin -> https://github.com/dawn1127/dawn_blog.git`；預設上傳流程優先用明確 staged：`git status`、`git add <明確檔案>`、`git add -u`、`git status`、必要時 `git diff --staged --stat` / `git diff --staged`、`git commit -m "..."`、`git push`。
 - 驗證 AI 實際使用的模型時，看 app 記錄/requested model metadata，不依賴模型自我介紹。
 - 編輯含中文的 `.ts`、`.tsx`、`.md` 時，避免用 PowerShell 管線重寫檔案；優先用 `apply_patch`，必要時用 Node 明確以 UTF-8 讀寫。
+
+## 工作流強制規則（auto-invoke skill）
+
+- 使用 Notion MCP 寫入工具前（`mcp__*__notion-create-pages` / `notion-update-page` / `notion-duplicate-page` / `notion-update-data-source` / `notion-create-database` / `notion-move-pages`），必須先完成：(1) `$notion-workflow-automation` 的 Auto Notion portal gate（含 connector check、coverage audit）；(2) `$notion-portal-layout` 的 layout preflight（判定 mode：`light touch` / `structural redesign` / `layout no-op / handoff`）。兩者通過後才能寫入，結果以 gate output 格式 inline 回報。
+- 開始網站 bug 或事故調查前（症狀含 UI / runtime / API / session / 500 / hydration / control-panel / AI Chat / providers / system-health / compose / local / login / logout 等），必須先走 `$obsidian-bug-triage` 的路徑：`00-home.md` → `01-triage-map.md` → 對應模組 note；之後再接 repo → runtime → browser。純知識問答或讀檔不觸發。
+- `Memory wrap` / commit / push / publish 前，必須自動跑 `$obsidian-bug-triage` 的 auto dossier workflow gate 與 `$notion-workflow-automation` 的 auto Notion portal gate；若發現 `possible-gap` / `blocked-gap` 要在 wrap/commit 前補齊，或明確報告 knowingly skip。
+- Escape hatch：使用者明確以「skip preflight」「跳過 layout check」「直接寫 Notion」「不讀 dossier」等語句要求略過時遵從，但在回應中明確標註已跳過哪個 gate，讓使用者可回溯。
+- 每次回應結束前，若本輪觸發了 `Edit` / `Write` / `Bash(git commit)` / `Bash(git push)` / `Bash(git tag)` 任一工具，必須在回應末段自我檢查並**明示結論**：
+  1. 該不該跑 `Memory wrap`？（Log.md 需要新 entry 嗎？）
+  2. 該不該跑 `dossier sync` / 寫 `dossier note`？（Obsidian 模組 note 需要更新嗎？）
+  3. 該不該跑 `notion check` / 觸發 Notion portal gate？（managed Notion 頁面需要 sync 嗎？）
+  若判定「該跑但本輪沒跑」，給出「建議接下來執行 X」一行建議；若判定「不該跑」，用一行說明 no-op 理由（例如「純配置調整，不影響 managed 頁面」）。純讀檔、回答問題、本輪已跑過對應 wrap / sync / check 則略過此自我檢查。
 
 ## 網址與導航規則
 
