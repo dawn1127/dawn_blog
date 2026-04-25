@@ -109,7 +109,7 @@ npm run build
 
 For a new chat or fresh session:
 
-1. Read `README.md`, latest entries in `Log.md`, then `Memory.md`.
+1. Read `README.md`, latest entries in `Log.md`, then `Memory.md`. Claude Code sessions auto-load these via `CLAUDE.md` `@import` so step 1 is automatic when using Claude Code.
 2. Prefer `.\scripts\status-local.ps1` to see whether the local runtime is already up.
 3. If local mode is stopped, run `.\scripts\start-local.ps1`.
 4. If you need the formal external/production path, stop local mode first, then run `.\scripts\start-compose.ps1`.
