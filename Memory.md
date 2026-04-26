@@ -42,7 +42,9 @@
 - `Memory wrap` / commit / push / publish 前，必須自動跑 `$obsidian-bug-triage` 的 auto dossier workflow gate 與 `$notion-workflow-automation` 的 auto Notion portal gate；若發現 `possible-gap` / `blocked-gap` 要在 wrap/commit 前補齊，或明確報告 knowingly skip。
 - Notion managed pages 不在 production 上留 stub：頁面建立後必須在同 session 填滿基本內容（hero callout、主要 sections、See Also、`Differences from Codex` 若有）才停手。若 token 不夠就推遲建頁，不建空殼。lessons learned 2026-04-25 → 2026-04-26 補完事件。
 - Escape hatch：使用者明確以「skip preflight」「跳過 layout check」「直接寫 Notion」「不讀 dossier」等語句要求略過時遵從，但在回應中明確標註已跳過哪個 gate，讓使用者可回溯。
-- 每次回應結束前，若本輪觸發了 `Edit` / `Write` / `Bash(git commit)` / `Bash(git push)` / `Bash(git tag)` 任一工具，必須在回應末段自我檢查並**明示結論**：
+- Wrap canonical：Claude Code 是 shared root `Log.md` 的 default canonical wrapper；codex 只在 Claude 明確 delegate 或 codex 獨立完成 Claude 不參與的批次時才寫 shared root wrap。雙方 wrap 前必先 fetch 最新 `Log.md` 確認狀態，避免併發覆寫。
+- Buffer ID 帶 agent 前綴：dossier review buffer 用 `dossier-action-{agent}-YYYYMMDD-NNN`，Notion write buffer 用 `notion-buffer-{agent}-YYYYMMDD-NNN`，`{agent}` 取 `claude` 或 `codex`。既有未加前綴的 entry 不 bulk migrate，等下次對應 prune 時再遷。
+- 每次回應結束前（**Claude Code only**），若本輪觸發了 `Edit` / `Write` / `Bash(git commit)` / `Bash(git push)` / `Bash(git tag)` 任一工具，必須在回應末段自我檢查並**明示結論**：
   1. 該不該跑 `Memory wrap`？（Log.md 需要新 entry 嗎？）
   2. 該不該跑 `dossier sync` / 寫 `dossier note`？（Obsidian 模組 note 需要更新嗎？）
   3. 該不該跑 `notion check` / 觸發 Notion portal gate？（managed Notion 頁面需要 sync 嗎？）
