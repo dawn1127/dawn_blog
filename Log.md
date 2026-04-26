@@ -29,6 +29,7 @@ Newest entry first. Keep short-term progress here. Do not store durable rules.
 - Built `Portal Layout Skill Guide` (`34da627c-4832-81f8`) as Codex Core Pages 7th entry, full content paralleling other Codex skill guides; positioned between `Notion Workflow` and `Memory` in main portal Core Pages.
 - Updated main portal `## Claude Code` section to slim form: replaced 2-column Setup / Memory model with link to sub-portal + 1-line description (sub-pages now hold the depth).
 - `page-registry.md`: added 6 new entries (sub-portal + 4 Claude Code skill pages + Codex Portal Layout); registry now tracks 13 managed pages.
+- 2026-04-26: Filled previously-stub Notion pages `Claude Code Triage Skill` and `Claude Code Portal Layout` with full content (Recipe B2 layout). Triage page mirrors Codex Triage Skill Guide pattern + adds Vault 11-note-file map + Differences from Codex section. Portal Layout page documents Claude Code-specific Memory.md hard rule trigger, escape hatch, end-of-response self-check. Cleaned 3 Notion auto-format color-leak artifacts via targeted content_update. page-registry.md updated to remove "(stub)" markers.
 
 ### Files Changed
 
@@ -60,7 +61,7 @@ Newest entry first. Keep short-term progress here. Do not store durable rules.
 
 ### Next
 
-- Fill content for stub pages `Claude Code Triage Skill` (`34da627c-4832-8180`) and `Claude Code Portal Layout` (`34da627c-4832-8111`) — currently they only have header callout + "to be filled" placeholder + See Also.
+- ~~Fill content for stub pages~~ DONE 2026-04-26.
 - Open new Claude Code session and verify `@Log.md` auto-loads, plus auto-invoke rules fire without prompting (e.g. ask to update a Notion page -> portal gate + layout preflight should appear inline before write).
 - Observe soft-rule adherence over 1-2 weeks; if reliability < 90%, consider PreToolUse / UserPromptSubmit hook layer.
 - Decide whether to merge `memory-bound-log` into `main` after observation window.

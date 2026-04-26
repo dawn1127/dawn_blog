@@ -40,6 +40,7 @@
 - 使用 Notion MCP 寫入工具前（`mcp__*__notion-create-pages` / `notion-update-page` / `notion-duplicate-page` / `notion-update-data-source` / `notion-create-database` / `notion-move-pages`），必須先完成：(1) `$notion-workflow-automation` 的 Auto Notion portal gate（含 connector check、coverage audit）；(2) `$notion-portal-layout` 的 layout preflight（判定 mode：`light touch` / `structural redesign` / `layout no-op / handoff`）。兩者通過後才能寫入，結果以 gate output 格式 inline 回報。
 - 開始網站 bug 或事故調查前（症狀含 UI / runtime / API / session / 500 / hydration / control-panel / AI Chat / providers / system-health / compose / local / login / logout 等），必須先走 `$obsidian-bug-triage` 的路徑：`00-home.md` → `01-triage-map.md` → 對應模組 note；之後再接 repo → runtime → browser。純知識問答或讀檔不觸發。
 - `Memory wrap` / commit / push / publish 前，必須自動跑 `$obsidian-bug-triage` 的 auto dossier workflow gate 與 `$notion-workflow-automation` 的 auto Notion portal gate；若發現 `possible-gap` / `blocked-gap` 要在 wrap/commit 前補齊，或明確報告 knowingly skip。
+- Notion managed pages 不在 production 上留 stub：頁面建立後必須在同 session 填滿基本內容（hero callout、主要 sections、See Also、`Differences from Codex` 若有）才停手。若 token 不夠就推遲建頁，不建空殼。lessons learned 2026-04-25 → 2026-04-26 補完事件。
 - Escape hatch：使用者明確以「skip preflight」「跳過 layout check」「直接寫 Notion」「不讀 dossier」等語句要求略過時遵從，但在回應中明確標註已跳過哪個 gate，讓使用者可回溯。
 - 每次回應結束前，若本輪觸發了 `Edit` / `Write` / `Bash(git commit)` / `Bash(git push)` / `Bash(git tag)` 任一工具，必須在回應末段自我檢查並**明示結論**：
   1. 該不該跑 `Memory wrap`？（Log.md 需要新 entry 嗎？）
