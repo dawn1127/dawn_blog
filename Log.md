@@ -2,6 +2,47 @@
 
 Newest entry first. Keep short-term progress here. Do not store durable rules.
 
+## 2026-04-26 - Cooperation Rules Locked And memory-bound-log Merged To Main
+
+### Done
+
+- Inter-agent chat-room established at `claude and codex chat room/` (rounds 01-04). Per user role-reset 2026-04-26: Claude Code is lead agent; codex is support agent.
+- Cooperation rules locked in `Memory.md`:
+  - "End-of-response self-check" rule marked `(Claude Code only)`
+  - Added "Wrap canonical" — Claude Code is default canonical wrapper for shared root `Log.md`; codex defers unless delegated
+  - Added "Buffer ID prefix" — `dossier-action-{agent}-YYYYMMDD-NNN` / `notion-buffer-{agent}-YYYYMMDD-NNN`; existing entries migrate at next prune
+- Merged `memory-bound-log` to `main` via fast-forward push (`be85d6c..33405d3 -> main`). 4 commits absorbed: cf28434, ab4fe47, 18bd53b, 33405d3.
+- First real auto-rotate test: this wrap brings Log.md to 5 entries → auto-trim to 3 per Memory.md rule. Older entries preserved in git history and tag `pre-log-rotate-2026-04-25`.
+
+### Files Changed
+
+- `Memory.md` (3 lines added: Wrap canonical, Buffer ID prefix, `(Claude Code only)` marker)
+- `Log.md` (this entry + auto-rotate trim of 2 oldest entries)
+- chat-room files `01-04-...md` (untracked at main repo, inter-agent coordination only)
+- `origin/main` advanced from `be85d6c` to `33405d3`
+
+### Validation
+
+- Pre-merge `git rev-list --left-right --count origin/main...HEAD` = `0  4` (clean fast-forward, no conflict)
+- Push result: `be85d6c..33405d3 memory-bound-log -> main` (no rejection)
+- Tag `pre-log-rotate-2026-04-25` on origin (1746-line pre-rotate Log.md backup intact)
+- Auto-rotate result: Log.md trimmed from 5 to 3 entries; BOM preserved at offset 0
+
+### Blockers
+
+- No blocker.
+- Codex-side adaptations pending (Section 9 of `03-claude-code-cooperation-plan-2026-04-26.md`):
+  - codex switches `Memory wrap` behavior from latest-only to 3-entry rule on shared root `Log.md`
+  - codex updates local `obsidian-bug-triage/references/buffer-format.md` for agent-prefixed action IDs
+  - codex updates local `notion-workflow-automation/references/buffer-format.md` for agent-prefixed buffer IDs
+
+### Next
+
+- Observe soft-rule adherence over 1-2 weeks; if reliability < 90% consider PreToolUse hook layer
+- Threshold escalation per codex 10.4: extract to `AGENTS.md` if `Memory.md` > 200 lines OR coop rules > 25 bullets
+- Threshold escalation per codex 10.3: build shared canonical at `docs/agent-coordination/page-registry.shared.md` if title drift > 2 incidents/month
+- Resume product-level work: define first capability inside `Network PM Automation`
+
 ## 2026-04-25 - Claude Code Skill Setup And Memory Workflow Bound Log
 
 ### Done
@@ -99,74 +140,4 @@ Newest entry first. Keep short-term progress here. Do not store durable rules.
 ### Next
 
 - Define the first actual capability to build inside `Network PM Automation`.
-
-## 2026-04-20 - Win11 Repo Encoding Governance
-
-### Done
-
-- Standardized the repo text-encoding policy for Win11 and Windows PowerShell 5.1 compatibility.
-- Added `.editorconfig` and `.gitattributes` so the repo now has explicit text/eol guardrails instead of relying on editor defaults.
-- Normalized all tracked text files to the final policy:
-  - default: UTF-8 without BOM
-  - exceptions: `README.md`, `Log.md`, `Memory.md`, and `*.ps1` use UTF-8 with BOM
-- Updated `Memory.md` so future memory workflows treat the memory handoff files and PowerShell-sensitive files with the new encoding policy.
-
-### Files Changed
-
-- `.editorconfig`
-- `.gitattributes`
-- `README.md`
-- `Log.md`
-- `Memory.md`
-- tracked repo text files normalized for encoding policy compliance
-
-### Validation
-
-- Node scan confirmed the tracked-text-file policy is consistent across the repo:
-  - `README.md`, `Log.md`, `Memory.md`, and `*.ps1` are UTF-8 with BOM
-  - other tracked text files are UTF-8 without BOM
-- Windows PowerShell 5.1 `Get-Content` checks on `README.md`, `Log.md`, and `Memory.md` no longer showed visible mojibake
-- Re-read `.editorconfig` and `.gitattributes` after normalization to confirm the guardrails were saved correctly
-
-### Blockers
-
-- No blocker for the encoding governance itself.
-- The repo still relies on workflow discipline rather than an automated encoding audit, so future drift is less likely but not impossible.
-
-### Next
-
-- Keep the production chat streaming verification as the main product next step.
-- If encoding drift appears again, consider adding a lightweight encoding audit command to the repo verify flow.
-
-## 2026-04-20 - Chat Empty-State Garbled Text Hotfix
-
-### Done
-
-- Confirmed the latest Chat empty-state mojibake was not caused by provider data, bootstrap recovery, or database state.
-- Traced the visible garbled text to three corrupted source strings in `src/components/chat-workspace.tsx`.
-- Applied a minimal hotfix that only restored the affected Chat copy:
-  - `尚未配置可用模型`
-  - `有什麼可以幫你？`
-  - `可以貼上截圖、拖入圖片，或加入文件一起問。`
-
-### Files Changed
-
-- `src/components/chat-workspace.tsx`
-- `Log.md`
-
-### Validation
-
-- UTF-8 direct file read confirmed the three Chat strings are now stored as correct Chinese text.
-- `npm run typecheck`
-- `npm run lint`
-- `npm run build`
-- User manually hard-refreshed `http://localhost:3000/network-engineer/chat` and confirmed the empty-state title, description, and no-model status render correctly.
-
-### Blockers
-
-- No blocker for this hotfix after manual browser verification.
-
-### Next
-
-- Return to the higher-priority pending manual verification of the latest production chat streaming behavior.
 
