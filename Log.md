@@ -2,6 +2,53 @@
 
 Newest entry first. Keep short-term progress here. Do not store durable rules.
 
+## 2026-05-01 (P.M.) - Log cap 上調與 Codex 退役
+
+### Done
+
+- 完成 morning wrap (`9964c2b`) 之後的 4 件 follow-through 工作。
+- **note-map.md 多 vault 重構**：394 → 213 行（-46%），砍掉 universal 規則重複，per-vault sectioned；`network_engineer_vault` 保留完整 mapping，`dawn_blog_vault` 留 placeholder 等真實 bootstrap。
+- **Notion 2 頁 page-sync**：Triage Skill Guide（schema split + atomic reflexive 補上）+ sub-portal（Setup status 加 schema-bump 一行）。
+- **Log.md auto-rotate cap 從 3/4 上調到 7/10**（commit `a504159`）：5 處對齊（Memory.md / CLAUDE.md / project-memory-workflow SKILL.md ×2 / Notion Memory Skill Guide），原因是 3 entries 太緊，週掃描覆蓋不夠；148 → 預估 ~350 行 @import 成本仍安全。
+- **Codex 完全退役**（commit `4bff178`）：
+  - Tier 1：Memory.md 砍 "Wrap canonical" + "Buffer ID prefix" 兩條規則 + 簡化 stub 規則；skill references（buffer-format / method-details / registered-vaults）去 agent prefix
+  - Tier 2：5 個 Claude Code-side Notion 頁拔 "Differences from Codex" 段，改為 "Architecture highlights" / "Trigger and reporting style"，See Also 移除所有 codex side equivalent / Dossier Workflow Guide / Portal Layout Skill Guide 連結
+  - Tier 3：主 portal title `🧭 Codex and claude code` → `🧭 Claude Code Portal`；cascade-delete Codex sub-portal + 5 個 codex skill guide 子頁 + Codex System Archive 進 Notion trash（30 天可手動復原）
+  - Tier 4 不動：`~/.codex/`（555 MB CLI 自家 data）由你決定何時 `rm -rf`
+- **4 commits push 進 origin/main**（fast-forward `0d74890..4bff178`）：6a5220d / 9964c2b / a504159 / 4bff178。
+
+### Files Changed
+
+- `Memory.md`（砍 2 條 codex 規則 + 簡化 stub 規則 + cap 數字 3/4 → 7/10；BOM 保留）
+- `CLAUDE.md`（cap 描述對齊 7/10）
+- `~/.claude/skills/obsidian-bug-triage/references/{schema-core, registered-vaults, gate-modes, method-details, note-map, buffer-format}.md`（多檔重構與 codex 清理）
+- `~/.claude/skills/project-memory-workflow/SKILL.md`（cap 兩處）
+- `F:\Obsidian\network_engineer_vault\log.md`（schema-bump + refactor + codex retirement 三條 entry 補上）
+- Notion managed pages：5 個 Claude Code-side 頁多輪 page-sync；主 portal 改名 + cascade-delete
+
+### Validation
+
+- `git status --short --branch`：working tree clean，`origin/main..HEAD` empty（全 push）
+- BOM check：Log.md / Memory.md / README.md 三檔 `efbb bf` 完整
+- 所有 vault buffers `pending: 0`，無 deferred actions
+- Log.md 寫入本 entry 後 4 entries（< 10，不觸發 rotate）
+- 主 portal 重命名 fetch 驗證為 "🧭 Claude Code Portal"
+- Codex sub-portal cascade-delete API 回應確認（allow_deleting_content: true 路徑）
+
+### Blockers
+
+- 無 blocker。
+- Open items（deferred）：
+  - Notion trash 內 6 個 codex 頁 30 天內可在 UI 手動 trash 永久（你決定）
+  - 試水第二個 vault 還沒做，multi-vault portability schema 未經實證
+  - 產品線：定義 `Network PM Automation` 第一個實際能力（被卡最久的真產品下一步）
+
+### Next
+
+- session 安全收尾後可關 chat
+- 下次新 session 由 `CLAUDE.md` `@import` 自動載入 Memory / README / Log
+- 下個 session 第一動作建議：產品線推進，或開始試水第二個 vault
+
 ## 2026-05-01 - Dossier Skill Schema 拆分與 Slim 重構
 
 ### Done
