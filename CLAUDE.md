@@ -106,4 +106,4 @@ Auto-loaded at every session start so new sessions know the project without runn
 @README.md
 @Log.md
 
-`Log.md` is bounded to recent 3 entries by `project-memory-workflow` auto-rotate during `Memory wrap`. Older history lives in git (`git show pre-log-rotate-2026-04-25:Log.md` or `git log -p Log.md`).
+`Log.md` is bounded to recent 7 entries by `project-memory-workflow` auto-rotate during `Memory wrap` (trim to 7 when total > 10). Older history lives in git (`git show pre-log-rotate-2026-04-25:Log.md` or `git log -p Log.md`).
