@@ -2,6 +2,59 @@
 
 Newest entry first. Keep short-term progress here. Do not store durable rules.
 
+## 2026-04-30 - 新號 Claude Code 接手 + Skill 全域化 + Notion 同步
+
+### Done
+
+- 新號 Claude Code 接手舊號專案上下文。舊號 user prompt 提供 5-step handoff；本輪走完 Step 0–5 並完成 cold-load self-test（6 題答案完整輸出，待舊號批改）。
+- 兩號共用 `~/.claude/`，但 Anthropic 帳號獨立；Notion connector 是 OAuth-based，新號需單獨重新授權。
+- **Phase 1**：補裝 3 個缺失 skill 到 `~/.claude/skills/`（global，避免 worktree 切換丟失）。從 `~/.codex/skills/` 複製，同步補上舊號之前在已消失 worktree 中清過、但 codex 端未同步的 8 處 bug：
+  - `notion-portal-layout/SKILL.md`：5 處 dead refs（4× `notion:notion-knowledge-capture`、1× `notion:notion-research-documentation`）→ 改寫為 `$notion-workflow-automation`
+  - `notion-workflow-automation/SKILL.md`：vault path `Network Engineer AI Platform\10-notion-write-buffer.md` → `network_engineer_vault\buffers\notion-write.md`；1 處 dead ref；2 處 buffer filename
+  - `notion-workflow-automation/references/buffer-format.md`：vault path 同上修正；agent 描述 Codex-facing → shared by Claude Code and Codex
+  - `notion-workflow-automation/references/page-registry.md`：vault path + 3 處 buffer filename
+  - `obsidian-bug-triage`：原樣複製，已是 agent-neutral，無需修補
+- **Phase 2**：`Memory.md` 工作流硬規則對齊實際 vault：`00-home.md` → `index.md`、`01-triage-map.md` → `triage.md`。BOM `efbb bf` 保留。
+- **Phase 3**：Notion connector 重新 OAuth（修復 claude.ai 帳號 mismatch 後）；14 個 `mcp__744ad713-...__notion-*` tool 可用；fetch managed page `348a627c-...` 驗證讀取成功。
+- **Phase 4–5**：5 個 Claude Code-side managed pages 走完 portal gate + layout preflight + page-sync executed + fetch verify：
+  - `34da627c-4832-81a4-...` Claude Code sub-portal（2 輪 / 7 patches）
+  - `34da627c-4832-8180-...` Triage Skill Guide（2 輪 / 7 patches；含 11-note 列表整段重寫為新階層化結構）
+  - `34da627c-4832-81de-...` Notion Workflow Guide（3 patches）
+  - `34da627c-4832-8111-...` Portal Layout Guide（2 patches）
+  - `34da627c-4832-81f3-...` Memory Skill Guide → verified no-op（內容仍正確）
+  - `34ea627c-4832-8182-...` ui-ux-pro-max Guide → verified no-op（skill 未變）
+- 對齊到的關鍵變更：skill 位置 project-scope→global、vault 結構 11 個 NN-*.md → `index/triage/handover/modules/incidents/symptoms/buffers/templates`、setup status 寫入 2026-04-26 cooperation rules 與 2026-04-30 帳號接手紀錄。
+
+### Files Changed
+
+- `Memory.md`（1 行 edit；BOM 保留）
+- `~/.claude/skills/obsidian-bug-triage/`（新裝，原樣複製）
+- `~/.claude/skills/notion-workflow-automation/`（新裝 + 4 處 path/buffer 修補）
+- `~/.claude/skills/notion-portal-layout/`（新裝 + 5 處 dead refs 清理）
+- Notion managed pages：5 page-sync executed + 1 verified no-op，共 19 處 `content_updates` patches
+
+### Validation
+
+- `available skills` system-reminder 確認三個新 skill 已熱載入並出現在列表中
+- `git diff Memory.md` 顯示僅預期 1 行變更；`xxd` 確認 BOM `efbb bf` 完好
+- 5 頁 Notion 各自 update 後跑一次 `notion-fetch` 驗證內容正確
+- Cold-load self-test 6/6 答案輸出（Q1 版本、Q2 chat 入口、Q3 2026-04-26 wrap、Q4 Notion gate、Q5 PowerShell 中文編碼、Q6 agent 分工），等舊號批改
+
+### Blockers
+
+- 無 blocker。
+- Open items（deferred）：
+  - codex 端適配（2026-04-26 約定的 3 項：shared root Log.md 3-entry rule、`obsidian-bug-triage/references/buffer-format.md` agent 前綴、`notion-workflow-automation/references/buffer-format.md` agent 前綴）尚未確認 codex 是否已執行
+  - codex 的 `obsidian-bug-triage/references/note-map.md` 尚未針對新 vault 結構同步（Claude side `~/.claude/skills/` 也是同一個過時版本）
+  - README.md 尚未補「新 Claude Code 帳號接手 cookbook」（避免下次新號再丟）
+
+### Next
+
+- 在 README.md 新增「新 Claude Code 帳號接手 cookbook」section（含 Phase 1–3 步驟）
+- 確認 codex 端已落地 2026-04-26 約定 3 項
+- 同步 `note-map.md` 到新 vault 結構（兩端 skill 都需更新）
+- 回到產品線：定義 `Network PM Automation` 第一個實際能力
+
 ## 2026-04-26 - Cooperation Rules Locked And memory-bound-log Merged To Main
 
 ### Done
